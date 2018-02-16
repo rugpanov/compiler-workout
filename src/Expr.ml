@@ -63,8 +63,8 @@ let calc opstr v1 v2=
 	| "<=" -> if v1 <= v2 then 1 else 0
 	| ">" -> if v1 > v2 then 1 else 0
 	| ">=" -> if v1 >= v2 then 1 else 0
-	| "==" -> if v1 == v2 then 1 else 0
-	| "!=" -> if v1 != v2 then 1 else 0
+	| "==" -> if v1 = v2 then 1 else 0
+	| "!=" -> if v1 <> v2 then 1 else 0
 	| "&&" -> if get_bool v1 && get_bool v2 then 1 else 0
 	| "!!" -> if get_bool v1 || get_bool v2 then 1 else 0
 	| _ -> failwith @@ Printf.sprintf "Unknown op: %s" opstr
