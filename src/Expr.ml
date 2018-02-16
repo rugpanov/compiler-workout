@@ -36,12 +36,12 @@ let update x v s = fun y -> if x = y then v else s y
 let s = update "x" 1 @@ update "y" 2 @@ update "z" 3 @@ update "t" 4 empty
 
 (* Some testing; comment this definition out when submitting the solution. *)
-let _ =
+(*let _ =
   List.iter
     (fun x ->
        try  Printf.printf "%s=%d\n" x @@ s x
        with Failure s -> Printf.printf "%s\n" s
-    ) ["x"; "a"; "y"; "z"; "t"; "b"]
+    ) ["x"; "a"; "y"; "z"; "t"; "b"]*)
 
 (* Expression evaluator
 
@@ -50,5 +50,28 @@ let _ =
    Takes a state and an expression, and returns the value of the expression in 
    the given state.
 *)
-let eval = failwith "Not implemented yet"
-                    
+let get_bool value = if value = 0 then false else true
+ 
+let calc opstr v1 v2=
+	match opstr with 
+	| "+" -> v1 + v2
+	| "-" -> v1 - v2
+	| "*" -> v1 * v2
+	| "/" -> v1 / v2
+	| "%" -> v1 mod v2
+	| "<" -> if v1 < v2 then 1 else 0
+	| "<=" -> if v1 <= v2 then 1 else 0
+	| ">" -> if v1 > v2 then 1 else 0
+	| ">=" -> if v1 >= v2 then 1 else 0
+	| "==" -> if v1 == v2 then 1 else 0
+	| "!=" -> if v1 != v2 then 1 else 0
+	| "&&" -> if get_bool v1 && get_bool v2 then 1 else 0
+	| "!!" -> if get_bool v1 || get_bool v2 then 1 else 0
+	| _ -> failwith @@ Printf.sprintf "Unknown op: %s" opstr
+
+let rec eval state expression = 
+	match expression with
+	| Const (value) -> value
+	| Var (value) -> state value
+	| Binop (opstr, exp1, exp2) -> let v1 = eval state exp1 and v2 = eval state exp2 in calc opstr v1 v2 
+
