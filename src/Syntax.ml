@@ -38,26 +38,26 @@ module Expr =
  
 	let calc opstr v1 v2=
 		match opstr with 
-		| "+" -> v1 + v2
-		| "-" -> v1 - v2
-		| "*" -> v1 * v2
-		| "/" -> v1 / v2
-		| "%" -> v1 mod v2
-		| "<" -> if v1 < v2 then 1 else 0
-		| "<=" -> if v1 <= v2 then 1 else 0
-		| ">" -> if v1 > v2 then 1 else 0
-		| ">=" -> if v1 >= v2 then 1 else 0
-		| "==" -> if v1 = v2 then 1 else 0
-		| "!=" -> if v1 <> v2 then 1 else 0
-		| "&&" -> if get_bool v1 && get_bool v2 then 1 else 0
-		| "!!" -> if get_bool v1 || get_bool v2 then 1 else 0
-		| _ -> failwith @@ Printf.sprintf "Unknown op: %s" opstr
+			| "+" -> v1 + v2
+			| "-" -> v1 - v2
+			| "*" -> v1 * v2
+			| "/" -> v1 / v2
+			| "%" -> v1 mod v2
+			| "<" -> if v1 < v2 then 1 else 0
+			| "<=" -> if v1 <= v2 then 1 else 0
+			| ">" -> if v1 > v2 then 1 else 0
+			| ">=" -> if v1 >= v2 then 1 else 0
+			| "==" -> if v1 = v2 then 1 else 0
+			| "!=" -> if v1 <> v2 then 1 else 0
+			| "&&" -> if get_bool v1 && get_bool v2 then 1 else 0
+			| "!!" -> if get_bool v1 || get_bool v2 then 1 else 0
+			| _ -> failwith @@ Printf.sprintf "Unknown op: %s" opstr
 	
 	let rec eval state expression = 
 		match expression with
-		| Const (value) -> value
-		| Var (value) -> state value
-		| Binop (opstr, exp1, exp2) -> let v1 = eval state exp1 and v2 = eval state exp2 in calc opstr v1 v2 
+			| Const (value) -> value
+			| Var (value) -> state value
+			| Binop (opstr, exp1, exp2) -> let v1 = eval state exp1 and v2 = eval state exp2 in calc opstr v1 v2 
   
 
   end
@@ -74,7 +74,7 @@ module Stmt =
     (* composition                      *) | Seq    of t * t with show
 
     (* The type of configuration: a state, an input stream, an output stream *)
-    type config = Expr.state * int list * int list 
+    type config = Expr.state * int list * int list
 
     (* Statement evaluator
 
@@ -82,6 +82,11 @@ module Stmt =
 
        Takes a configuration and a statement, and returns another configuration
     *)
-    let eval _ = failwith "Not implemented yet"
+	let rec eval config stmt =	
+		match config, stmt with
+			| (s, z::i, o), Read var -> (Expr.update var z s, i, o)
+			| (s, i, o), Write expr -> (s, i, o @ [Expr.eval s expr])
+			| (s, i, o), Assign (var, expr) -> (Expr.update var (Expr.eval s expr) s, i, o)
+			| conf1, Seq (s1, s2) -> eval (eval conf1 s1) s2
                                                          
   end
