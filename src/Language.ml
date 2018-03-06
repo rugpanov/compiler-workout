@@ -63,7 +63,7 @@ module Expr =
 			| Binop (opstr, exp1, exp2) -> let v1 = eval state exp1 and v2 = eval state exp2 in calc opstr v1 v2 
   
     let ostap_map_binops ops = let mapped_binop op = (ostap ($(op)), fun x y -> Binop (op, x, y))
-      in List.map mapped_binop ops;
+      in List.map mapped_binop ops;;
 
   (* Expression parser. You can use the following terminals:
        IDENT   --- a non-empty identifier a-zA-Z[a-zA-Z0-9_]* as a string
