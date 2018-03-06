@@ -62,18 +62,35 @@ module Expr =
 			| Var (value) -> state value
 			| Binop (opstr, exp1, exp2) -> let v1 = eval state exp1 and v2 = eval state exp2 in calc opstr v1 v2 
   
+    let ostap_map_binops ops = let mapped_binop op = (ostap ($(op)), fun x y -> Binop (op, x, y))
+      in List.map mapped_binop ops;
 
-    (* Expression parser. You can use the following terminals:
+  (* Expression parser. You can use the following terminals:
+       IDENT   --- a non-empty identifier a-zA-Z[a-zA-Z0-9_]* as a string
+       DECIMAL --- a decimal constant [0-9]+ as a string
+  *)
+  ostap (
+    parse:
+      !(Ostap.Util.expr
+       (fun x -> x)
+       [|
+         `Lefta, ostap_map_binops ["!!"];
+         `Lefta, ostap_map_binops ["&&"];
+         `Nona,  ostap_map_binops ["<="; ">="; "<"; ">"; "=="; "!="];
+         `Lefta, ostap_map_binops ["+"; "-"];
+         `Lefta, ostap_map_binops ["*"; "/"; "%"]
+       |]
+       primary
+      );
 
-         IDENT   --- a non-empty identifier a-zA-Z[a-zA-Z0-9_]* as a string
-         DECIMAL --- a decimal constant [0-9]+ as a string
-   
-    *)
-    ostap (
-      parse: empty {failwith "Not implemented yet"}
-    )
+    primary: 
+        x:IDENT {Var x} 
+      | d:DECIMAL { Const d } 
+      | -"(" parse -")"
+  )
 
-  end
+end
+
                     
 (* Simple statements: syntax and sematics *)
 module Stmt =
@@ -104,7 +121,12 @@ module Stmt =
 
     (* Statement parser *)
     ostap (
-      parse: empty {failwith "Not implemented yet"}
+      parse: seq | stmt;
+      stmt: read | write | assign;
+      read: "read" -"(" x:IDENT -")" { Read x };
+      write: "write" -"(" e:!(Expr.parse) -")" { Write e };
+      assign: x:IDENT -":=" e:!(Expr.parse) { Assign (x, e) };
+      seq: a:stmt -";" b:parse { Seq (a, b) }
     )
       
   end
