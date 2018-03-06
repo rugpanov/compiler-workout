@@ -37,14 +37,31 @@ module Expr =
     *)
     let update x v s = fun y -> if x = y then v else s y
 
-    (* Expression evaluator
-
-          val eval : state -> t -> int
+	let get_bool value = if value = 0 then false else true
  
-       Takes a state and an expression, and returns the value of the expression in 
-       the given state.
-    *)
-    let eval _ = failwith "Not implemented yet"
+	let calc opstr v1 v2=
+		match opstr with 
+			| "+" -> v1 + v2
+			| "-" -> v1 - v2
+			| "*" -> v1 * v2
+			| "/" -> v1 / v2
+			| "%" -> v1 mod v2
+			| "<" -> if v1 < v2 then 1 else 0
+			| "<=" -> if v1 <= v2 then 1 else 0
+			| ">" -> if v1 > v2 then 1 else 0
+			| ">=" -> if v1 >= v2 then 1 else 0
+			| "==" -> if v1 = v2 then 1 else 0
+			| "!=" -> if v1 <> v2 then 1 else 0
+			| "&&" -> if get_bool v1 && get_bool v2 then 1 else 0
+			| "!!" -> if get_bool v1 || get_bool v2 then 1 else 0
+			| _ -> failwith @@ Printf.sprintf "Unknown op: %s" opstr
+	
+	let rec eval state expression = 
+		match expression with
+			| Const (value) -> value
+			| Var (value) -> state value
+			| Binop (opstr, exp1, exp2) -> let v1 = eval state exp1 and v2 = eval state exp2 in calc opstr v1 v2 
+  
 
     (* Expression parser. You can use the following terminals:
 
@@ -70,7 +87,7 @@ module Stmt =
     (* composition                      *) | Seq    of t * t with show
 
     (* The type of configuration: a state, an input stream, an output stream *)
-    type config = Expr.state * int list * int list 
+    type config = Expr.state * int list * int list
 
     (* Statement evaluator
 
@@ -78,7 +95,12 @@ module Stmt =
 
        Takes a configuration and a statement, and returns another configuration
     *)
-    let eval _ = failwith "Not implemented yet"
+  let rec eval config stmt =	
+    match config, stmt with
+      | (s, z::i, o), Read var -> (Expr.update var z s, i, o)
+      | (s, i, o), Write expr -> (s, i, o @ [Expr.eval s expr])
+      | (s, i, o), Assign (var, expr) -> (Expr.update var (Expr.eval s expr) s, i, o)
+      | conf1, Seq (s1, s2) -> eval (eval conf1 s1) s2
 
     (* Statement parser *)
     ostap (
@@ -93,7 +115,6 @@ module Stmt =
 type t = Stmt.t    
 
 (* Top-level evaluator
-
      eval : t -> int list -> int list
 
    Takes a program and its input stream, and returns the output stream
