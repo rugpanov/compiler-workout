@@ -128,7 +128,7 @@ let env, asm =
           | "/" ->[Mov (sy, eax); Cltd; IDiv sx; Mov (eax, sy)]
           | "%" ->[Mov (sy, eax); Cltd; IDiv sx; Mov (edx, sy)]
           | _ -> [Mov (sy, eax); Binop (op, sx, eax); Mov (eax, sy)]
-      | _ -> failwith "Not implemented yet" 
+      | _ -> failwith "Something went wrong" 
    in 
    let env, asm' = compile env code' in
    env, asm @ asm'
