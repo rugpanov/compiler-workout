@@ -51,7 +51,7 @@ let show instr =
   | "!!"  -> "orl" 
   | "^"   -> "xorl"
   | "cmp" -> "cmpl"
-  | _     -> failwith "unknown binary operator"
+  | op     -> failwith (Printf.sprintf "Unknown binary operator %s" op)    
   in
   let opnd = function
   | R i -> regs.(i)
@@ -79,21 +79,60 @@ open SM
 
    Take an environment, a stack machine program, and returns a pair --- the updated environment and the list
    of x86 instructions
+   
+      | LD x -> let s, env = (env#global x)#allocate in env, [Mov (M (env#loc x), s)]
+   | _ -> failwith "Something went wrong" 
 *)
+let set_is_not_zero a = [
+      Binop ("^", eax, eax);
+      Binop ("cmp", eax, a);
+      Set ("ne", "%al");
+      Mov (eax, a)
+    ]
+
+let cmp a b suf = [
+      Mov (a, edx);
+      Binop ("^", eax, eax); (* set eax to zero first *)
+      Binop ("cmp", edx, b);
+      Set (suf, "%al");
+      Mov (eax, b)
+    ]
+
+let smart_move tx ty = 
+  match tx, ty with
+  | R _, _ -> [Mov(tx, ty)]
+  |	_, R _ -> [Mov(tx, ty)]
+  | _ -> [Mov (tx, eax); Mov (eax, ty)]
+
 let rec compile env = function
 | [] -> env, []
 | instr :: code' ->
-    let env, asm = 
+let env, asm = 
       match instr with
       | CONST n -> let s, env = env#allocate in env, [Mov (L n, s)]
-      | WRITE -> let s, env = env#pop in env, [Push s; Call "Lwrite"; Pop eax]
-      | READ -> let s, env = env#allocate in env, [Call "Lread"; Mov (eax, s)]
-      | LD x -> let s, env = (env#global x)#allocate in env, [Mov (M ("global_" ^ x), s)]
-      | ST x -> let s, env = (env#global x)#pop in env, [Mov (s, M ("global_" ^ x))]
+      | WRITE -> let s, env = env#pop in env, [Push s; Call "_Lwrite"; Pop eax]
+      | READ -> let s, env = env#allocate in env, [Call "_Lread"; Mov (eax, s)]
+      | ST x -> let s, env = (env#global x)#pop in env, smart_move s (M (env#loc x)) 
+      | LD x -> let s, env = (env#global x)#allocate in env, smart_move (M (env#loc x)) s
+      | BINOP op -> let sx, sy, env = env#pop2 in 
+        let s, env = env#allocate in 
+          env, match op with
+          | "&&" -> set_is_not_zero sy @ set_is_not_zero sx @ [Mov (sy, eax); Binop ("&&", sx, eax); Mov (eax, sy)]
+          | "!!" -> set_is_not_zero sy @ set_is_not_zero sx @ [Mov (sy, eax); Binop ("!!", sx, eax); Mov (eax, sy)]
+          | "==" -> cmp sx sy "e" @ [Mov (eax, sy)]
+          | "!=" -> cmp sx sy "ne" @ [Mov (eax, sy)]
+          | ">" -> cmp sx sy "g" @ [Mov (eax, sy)]
+          | ">=" -> cmp sx sy "ge" @ [Mov (eax, sy)]
+          | "<" -> cmp sx sy "l" @ [Mov (eax, sy)]
+          | "<=" -> cmp sx sy "le" @ [Mov (eax, sy)]
+          | "/" ->[Mov (sy, eax); Cltd; IDiv sx; Mov (eax, sy)]
+          | "%" ->[Mov (sy, eax); Cltd; IDiv sx; Mov (edx, sy)]
+          | _ -> [Mov (sy, eax); Binop (op, sx, eax); Mov (eax, sy)]
       | _ -> failwith "Not implemented yet" 
    in 
    let env, asm' = compile env code' in
    env, asm @ asm'
+
 
 (* A set of strings *)           
 module S = Set.Make (String)
@@ -113,8 +152,8 @@ class env =
       let x, n =
 	let rec allocate' = function
 	| []                            -> ebx     , 0
-	| (S n)::_                      -> S (n+1) , n+1
-	| (R n)::_ when n < num_of_regs -> R (n+1) , stack_slots
+	| (S n)::_                      -> S (n+1) , n+2
+	| (R n)::_ when n < num_of_regs-1 -> R (n+1) , stack_slots
 	| _                             -> S 0     , 1
 	in
 	allocate' stack
