@@ -134,26 +134,36 @@ module Stmt =
       | Seq    (s1, s2)     -> eval (eval conf s1) s2
       | Skip                -> conf
       | If     (e, s1, s2)  -> eval conf (if Expr.eval st e <> 0 then s1 else s2)
-      | While  (e, s)       -> (
-        if Expr.eval st e <> 0
-        then eval (eval conf s) (While(e, s))
-        else conf
-      )
-      | Repeat (s, e)       -> (
-        if Expr.eval st e <> 0
-        then eval (eval conf s) (Repeat (s, e))
-        else (eval conf s)
-      )
+      | While  (e, ss)       -> (
+          if Expr.eval st e <> 0
+          then eval (eval conf ss) (While(e, ss))
+          else conf
+        )
+      | Repeat (ss, e)       -> let (st, _, _) as conf' = eval conf ss in (
+            if Expr.eval st e = 0
+            then eval conf' @@ Repeat (ss, e)
+            else conf')
                                 
     (* Statement parser *)
     ostap (
       parse:
         s:stmt ";" ss:parse {Seq (s, ss)}
       | stmt;
+
+      else_branch:
+        %"elif" e:!(Expr.parse) %"then" s1:parse s2:else_branch {If (e, s1, s2)}
+      | %"else" s:parse {s}
+      | "" {Skip};
+
       stmt:
-        "read" "(" x:IDENT ")"          {Read x}
-      | "write" "(" e:!(Expr.parse) ")" {Write e}
-      | x:IDENT ":=" e:!(Expr.parse)    {Assign (x, e)}            
+        "read" "(" x:IDENT ")"                                                {Read x}
+      | "write" "(" e:!(Expr.parse) ")"                                       {Write e}
+      | x:IDENT ":=" e:!(Expr.parse)                                          {Assign (x, e)}
+      | %"skip"                                                               {Skip}
+      | %"while" e:!(Expr.parse) %"do" s:parse %"od"                          {While (e, s)}
+      | %"for" i:parse "," e:!(Expr.parse) "," s2:parse %"do" s1:parse %"od"  {Seq (i, While (e, Seq (s1, s2)))}
+      | %"repeat" s:parse %"until" e:!(Expr.parse)                            {Repeat (s, e)}
+      | %"if" e:!(Expr.parse) %"then" s1:parse s2:else_branch %"fi"           {If (e, s1, s2)}
     )
       
   end
