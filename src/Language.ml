@@ -115,7 +115,7 @@ module Stmt =
     (* empty statement                  *) | Skip
     (* conditional                      *) | If     of Expr.t * t * t
     (* loop with a pre-condition        *) | While  of Expr.t * t
-    (* loop with a post-condition       *) (* add yourself *)  with show
+    (* loop with a post-condition       *) | Repeat of t * Expr.t with show
                                                                     
     (* The type of configuration: a state, an input stream, an output stream *)
     type config = Expr.state * int list * int list 
@@ -128,10 +128,22 @@ module Stmt =
     *)
     let rec eval ((st, i, o) as conf) stmt =
       match stmt with
-      | Read    x       -> (match i with z::i' -> (Expr.update x z st, i', o) | _ -> failwith "Unexpected end of input")
-      | Write   e       -> (st, i, o @ [Expr.eval st e])
-      | Assign (x, e)   -> (Expr.update x (Expr.eval st e) st, i, o)
-      | Seq    (s1, s2) -> eval (eval conf s1) s2
+      | Read    x           -> (match i with z::i' -> (Expr.update x z st, i', o) | _ -> failwith "Unexpected end of input")
+      | Write   e           -> (st, i, o @ [Expr.eval st e])
+      | Assign (x, e)       -> (Expr.update x (Expr.eval st e) st, i, o)
+      | Seq    (s1, s2)     -> eval (eval conf s1) s2
+      | Skip                -> conf
+      | If     (e, s1, s2)  -> eval conf (if Expr.eval st e <> 0 then s1 else s2)
+      | While  (e, s)       -> (
+        if Expr.eval st e <> 0
+        then eval (eval conf s) (While(e, s))
+        else conf
+      )
+      | Repeat (s, e)       -> (
+        if Expr.eval st e <> 0
+        then eval (eval conf s) (Repeat (s, e))
+        else (eval conf s)
+      )
                                 
     (* Statement parser *)
     ostap (
