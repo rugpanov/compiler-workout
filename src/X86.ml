@@ -116,8 +116,8 @@ let rec compile env = function
   let env, asm = 
       match instr with
       | CONST n -> let s, env = env#allocate in env, [Mov (L n, s)]
-      | WRITE -> let s, env = env#pop in env, [Push s; Call "_Lwrite"; Pop eax]
-      | READ -> let s, env = env#allocate in env, [Call "_Lread"; Mov (eax, s)]
+      | WRITE -> let s, env = env#pop in env, [Push s; Call "Lwrite"; Pop eax]
+      | READ -> let s, env = env#allocate in env, [Call "Lread"; Mov (eax, s)]
       | ST x -> let s, env = (env#global x)#pop in env, smart_move s (M (env#loc x)) 
       | LD x -> let s, env = (env#global x)#allocate in env, smart_move (M (env#loc x)) s
       | LABEL s -> env, [Label s]
@@ -213,8 +213,8 @@ let genasm prog =
     )
     env#globals;
   Buffer.add_string asm "\t.text\n";
-  Buffer.add_string asm "\t.globl\t_main\n";
-  Buffer.add_string asm "_main:\n";
+  Buffer.add_string asm "\t.globl\tmain\n";
+  Buffer.add_string asm "main:\n";
   List.iter
     (fun i -> Buffer.add_string asm (Printf.sprintf "%s\n" @@ show i))
     code;
