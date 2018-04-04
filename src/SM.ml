@@ -31,7 +31,31 @@ type config = (prg * State.t) list * int list * Stmt.config
    Takes an environment, a configuration and a program, and returns a configuration as a result. The
    environment is used to locate a label to jump to (via method env#labeled <label_name>)
 *)                         
-let eval env ((cstack, stack, ((st, i, o) as c)) as conf) = failwith "Not implemented"
+let parse_check s e =
+  match s with
+  | "z"  -> e == 0
+  | "nz" -> e <> 0
+  | s -> failwith @@ "Unknown condition " ^ s
+
+let rec eval env ((stack, ((st, i, o) as c)) as conf) = function
+| [] -> conf
+| insn :: prg' -> 
+    (match insn with
+    | BINOP op -> let y::x::stack' = stack in eval env (Expr.to_func op x y :: stack', c) prg'
+    | READ     -> let z::i'        = i     in eval env (z::stack, (st, i', o)) prg'
+    | WRITE    -> let z::stack'    = stack in eval env (stack', (st, i, o @ [z])) prg'
+    | CONST i  -> eval env (i::stack, c) prg'
+    | LD x     -> eval env (st x :: stack, c) prg'
+    | ST x     -> let z::stack'    = stack in eval env (stack', (Expr.update x z st, i, o)) prg'
+    | LABEL _  -> eval env conf prg'
+    | JMP   l  -> eval env conf (env#labeled l)
+    | CJMP (s, l) ->
+      let z::stack' = stack in
+        eval env conf (
+          if (parse_check s z)
+          then (env#labeled l)
+          else prg')
+    ) 
 
 (* Top-level evaluation
 
@@ -56,4 +80,44 @@ let run p i =
    Takes a program in the source language and returns an equivalent program for the
    stack machine
 *)
-let compile (defs, p) = failwith "Not implemented"
+class env =
+    object(self)
+        val cnt = 0
+        method get_label = "l" ^ string_of_int cnt, {<cnt = cnt + 1>}
+    end
+
+let rec compile' env =
+  let rec expr = function
+  | Expr.Var   x          -> [LD x]
+  | Expr.Const n          -> [CONST n]
+  | Expr.Binop (op, x, y) -> expr x @ expr y @ [BINOP op]
+  in
+  function
+  | Stmt.Seq (s1, s2)  ->
+      let env, conf = compile' env s1 in
+      let env, conf' = compile' env s2 in
+      env, conf @ conf'
+  | Stmt.Read x        -> env, [READ; ST x]
+  | Stmt.Write e       -> env, expr e @ [WRITE]
+  | Stmt.Assign (x, e) -> env, expr e @ [ST x]
+  | Stmt.Skip          -> env, []
+  | Stmt.If (e, s1, s2)->
+      let firstL, env = env#get_label in
+      let secondL, env = env#get_label in
+      let env, c1 = compile' env s1 in
+      let env, c2 = compile' env s2 in
+      env, (expr e @ [CJMP ("z", firstL)] @ c1 @ 
+        [JMP secondL; LABEL firstL] @ c2 @ [LABEL secondL])
+  | Stmt.While (e, s)  ->
+      let firstL, env = env#get_label in
+      let secondL, env = env#get_label in
+      let env, c1 = compile' env s in
+      env, ([JMP firstL] @ [LABEL secondL] @ c1 @
+        [LABEL firstL] @ expr e @ [CJMP ("nz", secondL)])
+  | Stmt.Repeat (s, e) ->
+      let firstL, env = env#get_label in
+      let env, c1 = compile' env s in
+      env, ([LABEL firstL] @ c1 @ expr e @ [CJMP ("z", firstL)])
+
+let compile prg =
+  let env, res = compile' (new env) prg in res

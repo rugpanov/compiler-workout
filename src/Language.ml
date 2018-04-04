@@ -60,7 +60,31 @@ module Expr =
        Takes a state and an expression, and returns the value of the expression in 
        the given state.
     *)                                                       
-    let eval st expr = failwith "Not implemented"      
+    let to_func op =
+      let bti   = function true -> 1 | _ -> 0 in
+      let itb b = b <> 0 in
+      let (|>) f g   = fun x y -> f (g x y) in
+      match op with
+      | "+"  -> (+)
+      | "-"  -> (-)
+      | "*"  -> ( * )
+      | "/"  -> (/)
+      | "%"  -> (mod)
+      | "<"  -> bti |> (< )
+      | "<=" -> bti |> (<=)
+      | ">"  -> bti |> (> )
+      | ">=" -> bti |> (>=)
+      | "==" -> bti |> (= )
+      | "!=" -> bti |> (<>)
+      | "&&" -> fun x y -> bti (itb x && itb y)
+      | "!!" -> fun x y -> bti (itb x || itb y)
+      | _    -> failwith (Printf.sprintf "Unknown binary operator %s" op)    
+    
+    let rec eval st expr =      
+      match expr with
+      | Const n -> n
+      | Var   x -> st x
+      | Binop (op, x, y) -> to_func op (eval st x) (eval st y)
 
     (* Expression parser. You can use the following terminals:
 
@@ -69,7 +93,26 @@ module Expr =
                                                                                                                   
     *)
     ostap (                                      
-      parse: empty {failwith "Not implemented"}
+      parse:
+	  !(Ostap.Util.expr 
+             (fun x -> x)
+	     (Array.map (fun (a, s) -> a, 
+                           List.map  (fun s -> ostap(- $(s)), (fun x y -> Binop (s, x, y))) s
+                        ) 
+              [|                
+		`Lefta, ["!!"];
+		`Lefta, ["&&"];
+		`Nona , ["=="; "!="; "<="; "<"; ">="; ">"];
+		`Lefta, ["+" ; "-"];
+		`Lefta, ["*" ; "/"; "%"];
+              |] 
+	     )
+	     primary);
+      
+      primary:
+        n:DECIMAL {Const n}
+      | x:IDENT   {Var x}
+      | -"(" parse -")"
     )
     
   end
@@ -104,11 +147,44 @@ module Stmt =
 
        which returns a list of formal parameters, local variables, and a body for given definition
     *)
-    let eval env ((st, i, o) as conf) stmt = failwith "Not implemented"
+    let rec eval ((st, i, o) as conf) stmt =
+      match stmt with
+      | Read    x           -> (match i with z::i' -> (Expr.update x z st, i', o) | _ -> failwith "Unexpected end of input")
+      | Write   e           -> (st, i, o @ [Expr.eval st e])
+      | Assign (x, e)       -> (Expr.update x (Expr.eval st e) st, i, o)
+      | Seq    (s1, s2)     -> eval (eval conf s1) s2
+      | Skip                -> conf
+      | If     (e, s1, s2)  -> eval conf (if Expr.eval st e <> 0 then s1 else s2)
+      | While  (e, ss)       -> (
+          if Expr.eval st e <> 0
+          then eval (eval conf ss) (While(e, ss))
+          else conf
+        )
+      | Repeat (ss, e)       -> let (st, _, _) as conf' = eval conf ss in (
+            if Expr.eval st e = 0
+            then eval conf' @@ Repeat (ss, e)
+            else conf')
                                 
     (* Statement parser *)
     ostap (
-      parse: empty {failwith "Not implemented"}
+      parse:
+        s:stmt ";" ss:parse {Seq (s, ss)}
+      | stmt;
+
+      else_branch:
+        %"elif" e:!(Expr.parse) %"then" s1:parse s2:else_branch {If (e, s1, s2)}
+      | %"else" s:parse {s}
+      | "" {Skip};
+
+      stmt:
+        "read" "(" x:IDENT ")"                                                {Read x}
+      | "write" "(" e:!(Expr.parse) ")"                                       {Write e}
+      | x:IDENT ":=" e:!(Expr.parse)                                          {Assign (x, e)}
+      | %"skip"                                                               {Skip}
+      | %"while" e:!(Expr.parse) %"do" s:parse %"od"                          {While (e, s)}
+      | %"for" i:parse "," e:!(Expr.parse) "," s2:parse %"do" s1:parse %"od"  {Seq (i, While (e, Seq (s1, s2)))}
+      | %"repeat" s:parse %"until" e:!(Expr.parse)                            {Repeat (s, e)}
+      | %"if" e:!(Expr.parse) %"then" s1:parse s2:else_branch %"fi"           {If (e, s1, s2)}
     )
       
   end

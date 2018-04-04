@@ -8,8 +8,8 @@ check: $(TESTS)
 
 $(TESTS): %: %.expr
 #	@$(RC) $< && cat $@.input | ./$@ > $@.log && diff $@.log orig/$@.log
-	@cat $@.input | $(RC) -i $< > $@.log && diff $@.log orig/$@.log
-	@cat $@.input | $(RC) -s $< > $@.log && diff $@.log orig/$@.log
+	@cat $@.input | $(RC) -i $< > $@.log && diff --strip-trailing-cr $@.log orig/$@.log
+	@cat $@.input | $(RC) -s $< > $@.log && diff --strip-trailing-cr $@.log orig/$@.log
 
 clean:
-	rm -f test*.log *.s *~ $(TESTS)
+	rm -f test*.log *.s *~ $(TESTS) *.exe
