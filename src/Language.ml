@@ -147,23 +147,24 @@ module Stmt =
 
        which returns a list of formal parameters, local variables, and a body for given definition
     *)
-    let rec eval ((st, i, o) as conf) stmt =
+    let rec eval env ((st, i, o) as conf) stmt =
       match stmt with
       | Read    x           -> (match i with z::i' -> (Expr.update x z st, i', o) | _ -> failwith "Unexpected end of input")
       | Write   e           -> (st, i, o @ [Expr.eval st e])
       | Assign (x, e)       -> (Expr.update x (Expr.eval st e) st, i, o)
-      | Seq    (s1, s2)     -> eval (eval conf s1) s2
+      | Seq    (s1, s2)     -> eval env (eval env conf s1) s2
       | Skip                -> conf
-      | If     (e, s1, s2)  -> eval conf (if Expr.eval st e <> 0 then s1 else s2)
-      | While  (e, ss)       -> (
+      | If     (e, s1, s2)  -> eval env conf (if Expr.eval st e <> 0 then s1 else s2)
+      | While  (e, ss)      -> (
           if Expr.eval st e <> 0
-          then eval (eval conf ss) (While(e, ss))
+          then eval env (eval conf ss) (While(e, ss))
           else conf
         )
-      | Repeat (ss, e)       -> let (st, _, _) as conf' = eval conf ss in (
+      | Repeat (ss, e)      -> let (st, _, _) as conf' = eval env conf ss in (
             if Expr.eval st e = 0
-            then eval conf' @@ Repeat (ss, e)
+            then eval env conf' @@ Repeat (ss, e)
             else conf')
+      | Call (fun, params)  -> 
                                 
     (* Statement parser *)
     ostap (
@@ -175,7 +176,7 @@ module Stmt =
         %"elif" e:!(Expr.parse) %"then" s1:parse s2:else_branch {If (e, s1, s2)}
       | %"else" s:parse {s}
       | "" {Skip};
-
+      
       stmt:
         "read" "(" x:IDENT ")"                                                {Read x}
       | "write" "(" e:!(Expr.parse) ")"                                       {Write e}
@@ -185,6 +186,7 @@ module Stmt =
       | %"for" i:parse "," e:!(Expr.parse) "," s2:parse %"do" s1:parse %"od"  {Seq (i, While (e, Seq (s1, s2)))}
       | %"repeat" s:parse %"until" e:!(Expr.parse)                            {Repeat (s, e)}
       | %"if" e:!(Expr.parse) %"then" s1:parse s2:else_branch %"fi"           {If (e, s1, s2)}
+      | fun:IDENT "(" args:!(Util.list0)[Expr.parse] ")"                      {Call (fun, args)}
     )
       
   end
@@ -195,9 +197,13 @@ module Definition =
 
     (* The type for a definition: name, argument list, local variables, body *)
     type t = string * (string list * string list * Stmt.t)
-
+    
     ostap (
-      parse: empty {failwith "Not implemented"}
+      parse: %"fun" name:IDENT 
+                    "(" args:!(Util.list0 IDENT) ")" 
+                    l_vars:(%"local" !(Util.list)[ostap (IDENT)])?
+                    "{" body:!(Stmt.parse) "}" 
+                    {(name, (args, default [] l_vars, body))}
     )
 
   end
@@ -216,4 +222,6 @@ type t = Definition.t list * Stmt.t
 let eval (defs, body) i = failwith "Not implemented"
                                    
 (* Top-level parser *)
-let parse = failwith "Not implemented"
+ostap (
+  parse: !(Definition.parse)* !(Stmt.parse)
+)
