@@ -164,7 +164,12 @@ module Stmt =
             if Expr.eval st e = 0
             then eval env conf' @@ Repeat (ss, e)
             else conf')
-      | Call (fun, params)  -> 
+      | Call (f, params)    ->
+        let (args, vars, body) = env#definition f in
+        let evaled_params = List.map (Expr.eval st) params in
+        let enter_state = State.enter st (args @ vars) in
+        let update_function = (fun state param value -> State.update param value state) in
+        let (state2, i2, o2) = eval env ((List.fold_left2 update_function enter_state args evaled_params), i, o) body in (State.leave state2 st, i2, o2) 
                                 
     (* Statement parser *)
     ostap (
@@ -219,7 +224,11 @@ type t = Definition.t list * Stmt.t
 
    Takes a program and its input stream, and returns the output stream
 *)
-let eval (defs, body) i = failwith "Not implemented"
+let eval (defs, body) i = 
+  let module M = Map.Make (String) in
+  let mapped_defs = List.fold_left (fun map (f, data) -> M.add f data map) M.empty defs in
+  let env = (object method definition f = M.find f mapped_defs end) in
+  let _, _, output = Stmt.eval env (State.empty, i, []) body in output
                                    
 (* Top-level parser *)
 ostap (
