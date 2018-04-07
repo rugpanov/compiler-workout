@@ -41,20 +41,32 @@ let rec eval env ((stack, ((st, i, o) as c)) as conf) = function
 | [] -> conf
 | insn :: prg' -> 
     (match insn with
-    | BINOP op -> let y::x::stack' = stack in eval env (Expr.to_func op x y :: stack', c) prg'
-    | READ     -> let z::i'        = i     in eval env (z::stack, (st, i', o)) prg'
-    | WRITE    -> let z::stack'    = stack in eval env (stack', (st, i, o @ [z])) prg'
-    | CONST i  -> eval env (i::stack, c) prg'
-    | LD x     -> eval env (st x :: stack, c) prg'
-    | ST x     -> let z::stack'    = stack in eval env (stack', (Expr.update x z st, i, o)) prg'
-    | LABEL _  -> eval env conf prg'
-    | JMP   l  -> eval env conf (env#labeled l)
-    | CJMP (s, l) ->
-      let z::stack' = stack in
-        eval env conf (
-          if (parse_check s z)
-          then (env#labeled l)
-          else prg')
+      | BINOP op -> let y::x::stack' = stack in eval env (Expr.to_func op x y :: stack', c) prg'
+      | READ     -> let z::i'        = i     in eval env (z::stack, (st, i', o)) prg'
+      | WRITE    -> let z::stack'    = stack in eval env (stack', (st, i, o @ [z])) prg'
+      | CONST i  -> eval env (i::stack, c) prg'
+      | LD x     -> eval env (st x :: stack, c) prg'
+      | ST x     -> let z::stack'    = stack in eval env (stack', (Expr.update x z st, i, o)) prg'
+      | LABEL _  -> eval env conf prg'
+      | JMP   l  -> eval env conf (env#labeled l)
+      | CJMP (s, l) ->
+        let z::stack' = stack in
+          eval env conf (
+            if (parse_check s z)
+            then (env#labeled l)
+            else prg')
+      | CALL f   -> eval env ((prg', st)::cstack, stack, c) (env#labeled f)
+      | BEGIN (args, locals) ->
+        let rec resolve builder args stack = 
+        (match args, stack with
+          | [], _ -> List.rev builder, stack
+          | a::args', s::stack' -> resolve ((a, s)::builder) args' stack') in
+        let resolved, stack' = resolve [] args stack in
+        let state_to_eval = (fold_left (fun s (x, v) -> State.update x v s) (State.enter st (args @ locals)) resolved, i, o) in
+        eval env (cstack, stack', state_to_eval) prg'
+      | END -> match cstack with
+        | (prg', st')::cstack' -> eval env (cstack', stack, (State.drop_scope st st', i, o)) prg'
+        | [] -> conf
     ) 
 
 (* Top-level evaluation
@@ -86,38 +98,42 @@ class env =
         method get_label = "l" ^ string_of_int cnt, {<cnt = cnt + 1>}
     end
 
-let rec compile' env =
+let rec compile' env p =
   let rec expr = function
   | Expr.Var   x          -> [LD x]
   | Expr.Const n          -> [CONST n]
   | Expr.Binop (op, x, y) -> expr x @ expr y @ [BINOP op]
   in
-  function
-  | Stmt.Seq (s1, s2)  ->
-      let env, conf = compile' env s1 in
-      let env, conf' = compile' env s2 in
-      env, conf @ conf'
-  | Stmt.Read x        -> env, [READ; ST x]
-  | Stmt.Write e       -> env, expr e @ [WRITE]
-  | Stmt.Assign (x, e) -> env, expr e @ [ST x]
-  | Stmt.Skip          -> env, []
-  | Stmt.If (e, s1, s2)->
-      let firstL, env = env#get_label in
-      let secondL, env = env#get_label in
-      let env, c1 = compile' env s1 in
-      let env, c2 = compile' env s2 in
-      env, (expr e @ [CJMP ("z", firstL)] @ c1 @ 
-        [JMP secondL; LABEL firstL] @ c2 @ [LABEL secondL])
-  | Stmt.While (e, s)  ->
-      let firstL, env = env#get_label in
-      let secondL, env = env#get_label in
-      let env, c1 = compile' env s in
-      env, ([JMP firstL] @ [LABEL secondL] @ c1 @
-        [LABEL firstL] @ expr e @ [CJMP ("nz", secondL)])
-  | Stmt.Repeat (s, e) ->
-      let firstL, env = env#get_label in
-      let env, c1 = compile' env s in
-      env, ([LABEL firstL] @ c1 @ expr e @ [CJMP ("z", firstL)])
+  match p with
+    | Stmt.Seq (s1, s2)  ->
+        let conf = compile' env s1 in
+        let conf' = compile' env s2 in
+        conf @ conf'
+    | Stmt.Read x        -> [READ; ST x]
+    | Stmt.Write e       -> expr e @ [WRITE]
+    | Stmt.Assign (x, e) -> expr e @ [ST x]
+    | Stmt.Skip          -> []
+    | Stmt.If (e, s1, s2)->
+        let firstL = env#get_label in
+        let secondL = env#get_label in
+        let c1 = compile' env s1 in
+        let c2 = compile' env s2 in
+        (expr e @ [CJMP ("z", firstL)] @ c1 @ 
+          [JMP secondL; LABEL firstL] @ c2 @ [LABEL secondL])
+    | Stmt.While (e, s)  ->
+        let firstL = env#get_label in
+        let secondL = env#get_label in
+        let c1 = compile' env s in
+        ([JMP firstL] @ [LABEL secondL] @ c1 @
+          [LABEL firstL] @ expr e @ [CJMP ("nz", secondL)])
+    | Stmt.Repeat (s, e) ->
+        let firstL = env#get_label in
+        let c1 = compile' env s in
+        ([LABEL firstL] @ c1 @ expr e @ [CJMP ("z", firstL)])
 
-let compile prg =
-  let env, res = compile' (new env) prg in res
+let compile_procedure env (name, (params, locals, body)) =
+  [LABEL name; BEGIN (params, locals)] @ compile' env body @ [END]
+
+let compile prg = let env = new env in
+  let end_label = env#get_label in
+  [JMP end_label] @ List.concat (List.map (compile_procedure env) defs) @ [LABEL end_label] @ compile' env p
