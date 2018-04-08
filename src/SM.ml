@@ -37,16 +37,16 @@ let parse_check s e =
   | "nz" -> e <> 0
   | s -> failwith @@ "Unknown condition " ^ s
 
-let rec eval env ((stack, ((st, i, o) as c)) as conf) = function
-| [] -> conf
-| insn :: prg' -> 
+let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
+  | [] -> conf
+  | insn :: prg' ->
     (match insn with
-      | BINOP op -> let y::x::stack' = stack in eval env (Expr.to_func op x y :: stack', c) prg'
-      | READ     -> let z::i'        = i     in eval env (z::stack, (st, i', o)) prg'
-      | WRITE    -> let z::stack'    = stack in eval env (stack', (st, i, o @ [z])) prg'
-      | CONST i  -> eval env (i::stack, c) prg'
-      | LD x     -> eval env (st x :: stack, c) prg'
-      | ST x     -> let z::stack'    = stack in eval env (stack', (Expr.update x z st, i, o)) prg'
+      | BINOP op -> let y::x::stack' = stack in eval env (cstack, Expr.to_func op x y :: stack', c) prg'
+      | READ     -> let z::i'        = i     in eval env (cstack, z::stack, (st, i', o)) prg'
+      | WRITE    -> let z::stack'    = stack in eval env (cstack, stack', (st, i, o @ [z])) prg'
+      | CONST i  -> eval env (cstack, i::stack, c) prg'
+      | LD x     -> eval env (cstack, State.eval st x :: stack, c) prg'
+      | ST x     -> let z::stack' = stack in eval env (cstack, stack', (State.update x z st, i, o)) prg'
       | LABEL _  -> eval env conf prg'
       | JMP   l  -> eval env conf (env#labeled l)
       | CJMP (s, l) ->
@@ -62,10 +62,10 @@ let rec eval env ((stack, ((st, i, o) as c)) as conf) = function
           | [], _ -> List.rev builder, stack
           | a::args', s::stack' -> resolve ((a, s)::builder) args' stack') in
         let resolved, stack' = resolve [] args stack in
-        let state_to_eval = (fold_left (fun s (x, v) -> State.update x v s) (State.enter st (args @ locals)) resolved, i, o) in
+        let state_to_eval = (List.fold_left (fun s (x, v) -> State.update x v s) (State.enter st (args @ locals)) resolved, i, o) in
         eval env (cstack, stack', state_to_eval) prg'
       | END -> match cstack with
-        | (prg', st')::cstack' -> eval env (cstack', stack, (State.drop_scope st st', i, o)) prg'
+        | (prg', st')::cstack' -> eval env (cstack', stack, (State.leave st st', i, o)) prg'
         | [] -> conf
     ) 
 
@@ -93,10 +93,11 @@ let run p i =
    stack machine
 *)
 class env =
-    object(self)
-        val cnt = 0
-        method get_label = "l" ^ string_of_int cnt, {<cnt = cnt + 1>}
-    end
+	object (self)
+		val mutable label = 0
+		method get_label = let last_label = label in
+			label <- label + 1; Printf.sprintf "L%d" last_label
+	end
 
 let rec compile' env p =
   let rec expr = function
@@ -131,9 +132,10 @@ let rec compile' env p =
         let c1 = compile' env s in
         ([LABEL firstL] @ c1 @ expr e @ [CJMP ("z", firstL)])
 
-let compile_procedure env (name, (params, locals, body)) =
-  [LABEL name; BEGIN (params, locals)] @ compile' env body @ [END]
+let cproc env (f_name, (args, l_var, body)) =
+  [LABEL f_name; BEGIN (args, l_var)] @ compile' env body @ [END]
 
-let compile prg = let env = new env in
-  let end_label = env#get_label in
-  [JMP end_label] @ List.concat (List.map (compile_procedure env) defs) @ [LABEL end_label] @ compile' env p
+let compile (defs, prog) = let env = new env in
+  let e_label = env#get_label in
+  [JMP e_label] @ List.concat (List.map (cproc env) defs)
+    @ [LABEL e_label] @ compile' env prog

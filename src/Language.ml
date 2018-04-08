@@ -14,22 +14,33 @@ module State =
     (* State: global state, local state, scope variables *)
     type t = {g : string -> int; l : string -> int; scope : string list}
 
+    let empty_fun x = failwith (Printf.sprintf "Undefined variable: %s" x)
+  
     (* Empty state *)
-    let empty = failwith "Not implemented"
+    let empty = {g = empty_fun; l = empty_fun; scope = []}
 
     (* Update: non-destructively "modifies" the state s by binding the variable x 
        to value v and returns the new state w.r.t. a scope
     *)
-    let update x v s = failwith "Not implemented"
-                                
+    
+
+    let update x v s = 
+      let upd_f f y = 
+        if x = y
+        then v
+        else f y in
+      if List.mem x s.scope
+      then {s with l = upd_f s.l}
+      else {s with g = upd_f s.g}
+
     (* Evals a variable in a state w.r.t. a scope *)
-    let eval s x = failwith "Not implemented" 
+    let eval s x = (if List.mem x s.scope then s.l else s.g) x
 
     (* Creates a new scope, based on a given state *)
-    let enter st xs = failwith "Not implemented"
+    let enter st scope = {g = st.g; l = empty_fun; scope = scope}
 
     (* Drops a scope *)
-    let leave st st' = failwith "Not implemented"
+    let leave st st' = {st with g = st'.g}
 
   end
     
@@ -83,7 +94,7 @@ module Expr =
     let rec eval st expr =      
       match expr with
       | Const n -> n
-      | Var   x -> st x
+      | Var   name -> State.eval st name
       | Binop (op, x, y) -> to_func op (eval st x) (eval st y)
 
     (* Expression parser. You can use the following terminals:
@@ -149,17 +160,16 @@ module Stmt =
     *)
     let rec eval env ((st, i, o) as conf) stmt =
       match stmt with
-      | Read    x           -> (match i with z::i' -> (Expr.update x z st, i', o) | _ -> failwith "Unexpected end of input")
+      | Read    x           -> (match i with z::i' -> (State.update x z st, i', o) | _ -> failwith "Why is here end of input")
       | Write   e           -> (st, i, o @ [Expr.eval st e])
-      | Assign (x, e)       -> (Expr.update x (Expr.eval st e) st, i, o)
+      | Assign (x, e)       -> (State.update x (Expr.eval st e) st, i, o)
       | Seq    (s1, s2)     -> eval env (eval env conf s1) s2
       | Skip                -> conf
       | If     (e, s1, s2)  -> eval env conf (if Expr.eval st e <> 0 then s1 else s2)
-      | While  (e, ss)      -> (
-          if Expr.eval st e <> 0
-          then eval env (eval conf ss) (While(e, ss))
-          else conf
-        )
+      | While  (e, s)      -> (
+        if Expr.eval st e <> 0
+        then eval env (eval env conf s) stmt
+        else conf)
       | Repeat (ss, e)      -> let (st, _, _) as conf' = eval env conf ss in (
             if Expr.eval st e = 0
             then eval env conf' @@ Repeat (ss, e)
@@ -191,7 +201,7 @@ module Stmt =
       | %"for" i:parse "," e:!(Expr.parse) "," s2:parse %"do" s1:parse %"od"  {Seq (i, While (e, Seq (s1, s2)))}
       | %"repeat" s:parse %"until" e:!(Expr.parse)                            {Repeat (s, e)}
       | %"if" e:!(Expr.parse) %"then" s1:parse s2:else_branch %"fi"           {If (e, s1, s2)}
-      | fun:IDENT "(" args:!(Util.list0)[Expr.parse] ")"                      {Call (fun, args)}
+      | f_name:IDENT "(" args:!(Util.list0)[Expr.parse] ")"                      {Call (f_name, args)}
     )
       
   end
@@ -204,11 +214,12 @@ module Definition =
     type t = string * (string list * string list * Stmt.t)
     
     ostap (
+      default: empty { [] } ;
       parse: %"fun" name:IDENT 
-                    "(" args:!(Util.list0 IDENT) ")" 
-                    l_vars:(%"local" !(Util.list)[ostap (IDENT)])?
+                    "(" args:!(Util.list0 (ostap (IDENT))) ")" 
+                    l_vars:(-(%"local") (smt:IDENT tail:((-"," IDENT)* ) {smt :: tail}) | default)
                     "{" body:!(Stmt.parse) "}" 
-                    {(name, (args, default [] l_vars, body))}
+                    {(name, (args, l_vars, body))}
     )
 
   end
