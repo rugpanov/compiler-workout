@@ -40,7 +40,7 @@ module State =
     let enter st scope = {g = st.g; l = empty_fun; scope = scope}
 
     (* Drops a scope *)
-    let leave st st' = {st with g = st'.g}
+    let leave st st' = {st' with g = st.g}
 
   end
     
