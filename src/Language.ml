@@ -101,8 +101,7 @@ module Expr =
       | Var   name -> State.eval st name
       | Binop (op, x, y) -> to_func op (eval st x) (eval st y)
 
-
-    *)                                                       
+                                                  
          
     (* Expression parser. You can use the following terminals:
 
@@ -111,20 +110,17 @@ module Expr =
     *)
     ostap (                                      
       parse:
-	  !(Ostap.Util.expr 
-             (fun x -> x)
-	     (Array.map (fun (a, s) -> a, 
-                           List.map  (fun s -> ostap(- $(s)), (fun x y -> Binop (s, x, y))) s
-                        ) 
+	  !(Ostap.Util.expr (fun x -> x)
+	    (Array.map (fun (a, s) -> a, List.map  (fun s -> ostap(- $(s)), (fun x y -> Binop (s, x, y))) s) 
               [|                
-		`Lefta, ["!!"];
-		`Lefta, ["&&"];
-		`Nona , ["=="; "!="; "<="; "<"; ">="; ">"];
-		`Lefta, ["+" ; "-"];
-		`Lefta, ["*" ; "/"; "%"];
+                `Lefta, ["!!"];
+                `Lefta, ["&&"];
+                `Nona , ["=="; "!="; "<="; "<"; ">="; ">"];
+                `Lefta, ["+" ; "-"];
+                `Lefta, ["*" ; "/"; "%"];
               |] 
-	     )
-	     primary);
+	    )
+	    primary);
       
       primary:
         n:DECIMAL {Const n}
@@ -159,7 +155,7 @@ module Stmt =
        environment is the same as for expressions
     *)
 
-    let rec eval env ((st, i, o) as conf) stmt =
+    let rec eval env ((st, i, o, r) as conf) k stmt = 
       match stmt with
       | Read    x           -> (match i with z::i' -> (State.update x z st, i', o) | _ -> failwith "Why is here end of input")
       | Write   e           -> (st, i, o @ [Expr.eval st e])
