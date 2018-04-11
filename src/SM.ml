@@ -105,6 +105,7 @@ let rec compile' env p =
   | Expr.Var   x          -> [LD x]
   | Expr.Const n          -> [CONST n]
   | Expr.Binop (op, x, y) -> expr x @ expr y @ [BINOP op]
+  | Expr.Call (f, params) -> List.concat (List.map expr params) @ [CALL f]
   in
   match p with
     | Stmt.Seq (s1, s2)  ->

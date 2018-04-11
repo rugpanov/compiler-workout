@@ -137,7 +137,7 @@ module Expr =
       
       primary:
         n:DECIMAL {Const n}
-      | x:IDENT p:("(" params:!(Util.list0 parse) ")" {Call (x, params)}) {p}
+      | x:IDENT p:("(" params:!(Util.list0 parse) ")" {Call (x, params)} | empty {Var x}) {p}
       | -"(" parse -")"
     )
     
@@ -218,6 +218,7 @@ module Stmt =
       | %"for" i:parse "," e:!(Expr.parse) "," s2:parse %"do" s1:parse %"od"  {Seq (i, While (e, Seq (s1, s2)))}
       | %"repeat" s:parse %"until" e:!(Expr.parse)                            {Repeat (s, e)}
       | %"if" e:!(Expr.parse) %"then" s1:parse s2:else_branch %"fi"           {If (e, s1, s2)}
+      | %"return" e:!(Expr.parse)?                                            {Return e} 
       | f_name:IDENT "(" args:!(Util.list0)[Expr.parse] ")"                   {Call (f_name, args)}
     )
       
