@@ -56,17 +56,15 @@ let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
             then (env#labeled l)
             else prg')
       | CALL f   -> eval env ((prg', st)::cstack, stack, c) (env#labeled f)
-      | BEGIN (args, locals) ->
-        let rec resolve builder args stack = 
-        (match args, stack with
-          | [], _ -> List.rev builder, stack
-          | a::args', s::stack' -> resolve ((a, s)::builder) args' stack') in
-        let resolved, stack' = resolve [] args stack in
-        let state_to_eval = (List.fold_left (fun s (x, v) -> State.update x v s) (State.enter st (args @ locals)) resolved, i, o) in
-        eval env (cstack, stack', state_to_eval) prg'
-      | END -> match cstack with
+      | BEGIN (params, locals) ->
+        let s1 = State.enter st (params @ locals) in
+        let (st', stack') = List.fold_right (
+            fun params (st, x::stack') -> (State.update params x st, stack')  
+        ) params (s1, stack) in
+        eval env (cstack, stack', (st', i, o)) prg'
+      | END -> (match cstack with
         | (prg', st')::cstack' -> eval env (cstack', stack, (State.leave st st', i, o)) prg'
-        | [] -> conf
+        | [] -> conf)
     ) 
 
 (* Top-level evaluation
