@@ -133,6 +133,8 @@ let rec compile' env p =
         let c1 = compile' env s in
         ([LABEL firstL] @ c1 @ expr e @ [CJMP ("z", firstL)])
     | Stmt.Call (f, p)    -> List.concat (List.map expr p) @ [CALL f]
+    | Stmt.Return None  -> [] @ [END]
+    | Stmt.Return Some v -> (expr v) @ [END]
 
 let cproc env (f_name, (args, l_var, body)) =
   [LABEL f_name; BEGIN (args, l_var)] @ compile' env body @ [END]

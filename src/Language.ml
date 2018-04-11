@@ -95,11 +95,24 @@ module Expr =
       | "!!" -> fun x y -> bti (itb x || itb y)
       | _    -> failwith (Printf.sprintf "Unknown binary operator %s" op)    
     
-    let rec eval st expr =      
+     
+    let rec eval env ((st, i, o, r) as conf) expr =      
       match expr with
-      | Const n -> n
-      | Var   name -> State.eval st name
-      | Binop (op, x, y) -> to_func op (eval st x) (eval st y)
+      | Const n -> n, conf
+      | Var   name -> State.eval st name, conf
+      | Binop (op, x, y) ->
+        let p1, ((st, i, o, r) as conf) = eval env conf x in 
+        let p2, ((st, i, o, r) as conf) = eval env conf y in 
+        (to_func op) p1 p2, conf
+      | Call (funct, params) ->
+        let process_with_conf (conf, list) e = (let v, conf = eval env conf e in conf, list @ [v]) in
+        let conf, updated_params = List.fold_left process_with_conf (conf, []) params in
+        let ((st, i, o, r) as conf) = env#definition env funct updated_params conf in
+        (match r with
+          | None -> failwith "Void return"
+          | Some v -> v
+        ), conf
+
 
                                                   
          
@@ -124,7 +137,7 @@ module Expr =
       
       primary:
         n:DECIMAL {Const n}
-      | x:IDENT   {Var x}
+      | x:IDENT p:("(" params:!(Util.list0 parse) ")" {Call (x, params)}) {p}
       | -"(" parse -")"
     )
     
@@ -154,30 +167,36 @@ module Stmt =
        Takes an environment, a configuration and a statement, and returns another configuration. The 
        environment is the same as for expressions
     *)
+    let process_seq p1 p2 =
+      match p1, p2 with
+      | Skip, p -> p
+      | p, Skip -> p
+      | p1', p2'  -> Seq (p1', p2')
 
     let rec eval env ((st, i, o, r) as conf) k stmt = 
       match stmt with
-      | Read    x           -> (match i with z::i' -> (State.update x z st, i', o) | _ -> failwith "Why is here end of input")
-      | Write   e           -> (st, i, o @ [Expr.eval st e])
-      | Assign (x, e)       -> (State.update x (Expr.eval st e) st, i, o)
-      | Seq    (s1, s2)     -> eval env (eval env conf s1) s2
-      | Skip                -> conf
-      | If     (e, s1, s2)  -> eval env conf (if Expr.eval st e <> 0 then s1 else s2)
-      | While  (e, s)      -> (
-        if Expr.eval st e <> 0
-        then eval env (eval env conf s) stmt
-        else conf)
-      | Repeat (ss, e)      -> let (st, _, _) as conf' = eval env conf ss in (
-            if Expr.eval st e = 0
-            then eval env conf' @@ Repeat (ss, e)
-            else conf')
+      | Read    x           -> eval env (match i with z::i' -> (State.update x z st, i', o, None) | _ -> failwith "Why is here end of input") Skip k
+      | Write   e           -> 
+                let value, (st, i, o, _) = Expr.eval env conf e in
+                eval env (st, i, o @ [value], None) Skip k
+      | Assign (x, e)       ->
+                let value, (st, i, o, _) = Expr.eval env conf e in
+                eval env (State.update x value st, i, o, None) Skip k
+      | Seq    (s1, s2)     -> eval env conf (process_seq s2 k) s1
+      | Skip                -> if k = Skip then (st, i, o, None) else eval env conf Skip k
+      | If     (e, s1, s2)  -> let value, conf = Expr.eval env conf e in eval env conf k (if value <> 0 then s1 else s2)
+      | While  (e, s)       -> (
+        let value, conf = Expr.eval env conf e in 
+        if (value <> 0)
+        then eval env conf (process_seq stmt k) s
+        else eval env conf Skip k)
+      | Repeat (s, e)       -> eval env conf (process_seq (While ((Expr.Binop ("==", e, Expr.Const 0)), s)) k) s 
       | Call (f, params)    ->
-        let (args, vars, body) = env#definition f in
-        let evaled_params = List.map (Expr.eval st) params in
-        let enter_state = State.enter st (args @ vars) in
-        let update_function = (fun state param value -> State.update param value state) in
-        let (state2, i2, o2) = eval env ((List.fold_left2 update_function enter_state args evaled_params), i, o) body in (State.leave state2 st, i2, o2) 
-                                
+        let process_with_conf (conf, list) e = (let v, conf = Expr.eval env conf e in conf, list @ [v]) in
+        let conf, updated_params = List.fold_left process_with_conf (conf, []) params in
+        eval env (env#definition env f updated_params conf) Skip k
+      | Return Some ex      ->  let v, (st, i, o, _) = Expr.eval env conf ex in (st, i, o, Some v)
+      | Return None         -> (st, i, o, None)
 
     (* Statement parser *)
     ostap (
@@ -199,7 +218,7 @@ module Stmt =
       | %"for" i:parse "," e:!(Expr.parse) "," s2:parse %"do" s1:parse %"od"  {Seq (i, While (e, Seq (s1, s2)))}
       | %"repeat" s:parse %"until" e:!(Expr.parse)                            {Repeat (s, e)}
       | %"if" e:!(Expr.parse) %"then" s1:parse s2:else_branch %"fi"           {If (e, s1, s2)}
-      | f_name:IDENT "(" args:!(Util.list0)[Expr.parse] ")"                      {Call (f_name, args)}
+      | f_name:IDENT "(" args:!(Util.list0)[Expr.parse] ")"                   {Call (f_name, args)}
     )
       
   end
