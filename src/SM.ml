@@ -51,7 +51,7 @@ let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
       | JMP   l  -> eval env conf (env#labeled l)
       | CJMP (s, l) ->
         let z::stack' = stack in
-          eval env conf (
+            eval env (cstack, stack', (st, i, o)) (
             if (parse_check s z)
             then (env#labeled l)
             else prg')
