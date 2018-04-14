@@ -78,6 +78,7 @@ let show instr =
   | Label  l           -> Printf.sprintf "%s:\n" l
   | Jmp    l           -> Printf.sprintf "\tjmp\t%s" l
   | CJmp  (s , l)      -> Printf.sprintf "\tj%s\t%s" s l
+  | _ -> failwith (Printf.sprintf "Unknown instr =<" )    
 
 (* Opening stack machine to use instructions without fully qualified names *)
 open SM
@@ -110,6 +111,13 @@ let smart_move tx ty =
   |	_, R _ -> [Mov(tx, ty)]
   | _ -> [Mov (tx, eax); Mov (eax, ty)]
 
+let rec get_params builder env counter = ( 
+  match counter with
+  | 0 -> builder, env
+  | i -> let param, env = env#pop in
+  get_params (Push param :: builder) env (i-1)
+)
+
 let rec compile env code =
   let compile_instr env instr =
     match instr with
@@ -139,11 +147,20 @@ let rec compile env code =
           let env = env#enter f_name args l_var in
           env, [Push ebp; Mov (esp, ebp); Binop ("-", M ("$" ^ env#lsize), esp)]
         | END -> env, [Label env#epilogue; Mov (ebp, esp); Pop ebp; Ret;]
-        | RET is_func -> 
+        | RET is_func -> (
           if is_func
           then let func_result, env = env#pop in env, [Mov (func_result, eax); Jmp env#epilogue]
-          else env, [Jmp env#epilogue]
-        | CALL (f_name, args_count, is_func) -> failwith "Not implemented yet"
+          else env, [Jmp env#epilogue])
+        | CALL (f_name, param_count, is_func) -> (
+          let push_params, env = get_params [] env param_count in
+          let move_stack_pointer = [Binop ("+", L (param_count * word_size), esp)] in
+          let push_regs = List.map (fun x -> Push x) env#live_registers in
+          let pop_regs = List.rev_map (fun x -> Pop x) env#live_registers in
+          let get_result, env = (
+            if is_func
+            then let allocated_memory_link, env = env#allocate in [Mov (eax, allocated_memory_link)], env
+            else [], env) in
+          env, push_regs @ push_params @ [Call f_name] @ move_stack_pointer @ pop_regs @ get_result)
         | _ -> failwith "Something went wrong"
 in match code with
 | [] -> env, []

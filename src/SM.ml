@@ -63,7 +63,8 @@ let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
             fun params (st, x::stack') -> (State.update params x st, stack')  
         ) params (s1, stack) in
         eval env (cstack, stack', (st', i, o)) prg'
-      | END | RET -> (match cstack with
+      | RET _
+      | END -> (match cstack with
         | (prg', st')::cstack' -> eval env (cstack', stack, (State.leave st st', i, o)) prg'
         | [] -> conf)
     )
