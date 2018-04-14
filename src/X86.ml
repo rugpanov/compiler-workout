@@ -122,8 +122,8 @@ let rec compile env code =
   let compile_instr env instr =
     match instr with
       | CONST n -> let s, env = env#allocate in env, [Mov (L n, s)]
-      | WRITE -> let s, env = env#pop in env, [Push s; Call "_Lwrite"; Pop eax]
-      | READ -> let s, env = env#allocate in env, [Call "_Lread"; Mov (eax, s)]
+      | WRITE -> let s, env = env#pop in env, [Push s; Call "Lwrite"; Pop eax]
+      | READ -> let s, env = env#allocate in env, [Call "Lread"; Mov (eax, s)]
       | ST x -> let s, env = (env#global x)#pop in env, smart_move s (env#loc x) 
       | LD x -> let s, env = (env#global x)#allocate in env, smart_move (env#loc x) s
       | LABEL s -> env, [Label s]
@@ -248,13 +248,13 @@ let genasm (ds, stmt) =
   let env, code =
     compile
       (new env)
-      ((LABEL "_main") :: (BEGIN ("_main", [], [])) :: SM.compile (ds, stmt))
+      ((LABEL "main") :: (BEGIN ("main", [], [])) :: SM.compile (ds, stmt))
   in
   let data = Meta "\t.data" :: (List.map (fun s -> Meta (s ^ ":\t.int\t0")) env#globals) in 
   let asm = Buffer.create 1024 in
   List.iter
     (fun i -> Buffer.add_string asm (Printf.sprintf "%s\n" @@ show i))
-    (data @ [Meta "\t.text"; Meta "\t.globl\t_main"] @ code);
+    (data @ [Meta "\t.text"; Meta "\t.globl\tmain"] @ code);
   Buffer.contents asm
 
 (* Builds a program: generates the assembler file and compiles it with the gcc toolchain *)
