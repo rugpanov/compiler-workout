@@ -67,13 +67,11 @@ module Expr =
                                                             
     (* Expression evaluator
       val eval : env -> config -> t -> int * config
-
-
       Takes an environment, a configuration and an expresion, and returns another configuration. The 
       environment supplies the following method
       method definition : env -> string -> int list -> config -> config
       which takes an environment (of the same type), a name of the function, a list of actual parameters and a configuration, 
-      an returns a pair: the return value for the call and the resulting configuration
+      an returns resulting configuration
     *)                                                       
     let to_func op =
       let bti   = function true -> 1 | _ -> 0 in
@@ -113,8 +111,6 @@ module Expr =
           | Some v -> v
         ), conf
 
-
-                                                  
          
     (* Expression parser. You can use the following terminals:
 
@@ -238,6 +234,7 @@ module Definition =
         "{" body:!(Stmt.parse) "}" {
         (name, (args, (match locs with None -> [] | Some l -> l), body))
       }
+
     )
 
   end

@@ -10,11 +10,12 @@ open Language
 (* load a variable to the stack    *) | LD    of string
 (* store a variable from the stack *) | ST    of string
 (* a label                         *) | LABEL of string
-(* unconditional jump              *) | JMP   of string                                                                                                                
+(* unconditional jump              *) | JMP   of string
 (* conditional jump                *) | CJMP  of string * string
-(* begins procedure definition     *) | BEGIN of string list * string list
+(* begins procedure definition     *) | BEGIN of string * string list * string list
 (* end procedure definition        *) | END
-(* calls a procedure               *) | CALL  of string with show
+(* calls a function/procedure      *) | CALL  of string * int * bool
+(* returns from a function         *) | RET   of bool with show
                                                    
 (* The type for the stack machine program *)                                                               
 type prg = insn list
@@ -65,7 +66,7 @@ let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
       | END -> (match cstack with
         | (prg', st')::cstack' -> eval env (cstack', stack, (State.leave st st', i, o)) prg'
         | [] -> conf)
-    ) 
+    )
 
 (* Top-level evaluation
 
@@ -74,7 +75,6 @@ let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
    Takes a program, an input stream, and returns an output stream this program calculates
 *)
 let run p i =
-  (*print_prg p;*)
   let module M = Map.Make (String) in
   let rec make_map m = function
   | []              -> m
