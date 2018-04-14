@@ -110,20 +110,18 @@ let smart_move tx ty =
   |	_, R _ -> [Mov(tx, ty)]
   | _ -> [Mov (tx, eax); Mov (eax, ty)]
 
-let rec compile env = function
-| [] -> env, []
-| instr :: code' ->
-  let env, asm = 
-      match instr with
+let rec compile env code =
+  let compile_instr env instr =
+    match instr with
       | CONST n -> let s, env = env#allocate in env, [Mov (L n, s)]
       | WRITE -> let s, env = env#pop in env, [Push s; Call "Lwrite"; Pop eax]
       | READ -> let s, env = env#allocate in env, [Call "Lread"; Mov (eax, s)]
-      | ST x -> let s, env = (env#global x)#pop in env, smart_move s (M (env#loc x)) 
-      | LD x -> let s, env = (env#global x)#allocate in env, smart_move (M (env#loc x)) s
+      | ST x -> let s, env = (env#global x)#pop in env, smart_move s (env#loc x) 
+      | LD x -> let s, env = (env#global x)#allocate in env, smart_move (env#loc x) s
       | LABEL s -> env, [Label s]
       | JMP l -> env, [Jmp l]
       | CJMP (k, l) -> let s, env = env#pop in env, [Binop ("cmp", L 0, s); CJmp (k, l)]
-      | BINOP op -> let sx, sy, env = env#pop2 in 
+      | BINOP op -> (let sx, sy, env = env#pop2 in 
         let s, env = env#allocate in 
           env, match op with
           | "&&" -> set_is_not_zero sy @ set_is_not_zero sx @ [Mov (sy, eax); Binop ("&&", sx, eax); Mov (eax, sy)]
@@ -136,11 +134,14 @@ let rec compile env = function
           | "<=" -> cmp sx sy "le" @ [Mov (eax, sy)]
           | "/" ->[Mov (sy, eax); Cltd; IDiv sx; Mov (eax, sy)]
           | "%" ->[Mov (sy, eax); Cltd; IDiv sx; Mov (edx, sy)]
-          | _ -> [Mov (sy, eax); Binop (op, sx, eax); Mov (eax, sy)]
-      | _ -> failwith "Something went wrong" 
-   in 
-   let env, asm' = compile env code' in
-   env, asm @ asm'
+          | _ -> [Mov (sy, eax); Binop (op, sx, eax); Mov (eax, sy)])
+        | _ -> failwith "Something went wrong"
+in match code with
+| [] -> env, []
+| instr :: code' ->
+  let env', asm = compile_instr env instr in 
+  let env'', asm' = compile env' code' in
+  env'', asm @ asm'
 
 
 (* A set of strings *)           

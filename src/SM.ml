@@ -56,8 +56,8 @@ let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
             if (parse_check s z)
             then (env#labeled l)
             else prg')
-      | CALL f   -> eval env ((prg', st)::cstack, stack, c) (env#labeled f)
-      | BEGIN (params, locals) ->
+      | CALL (f, _, _)   -> eval env ((prg', st)::cstack, stack, c) (env#labeled f)
+      | BEGIN (_, params, locals) ->
         let s1 = State.enter st (params @ locals) in
         let (st', stack') = List.fold_right (
             fun params (st, x::stack') -> (State.update params x st, stack')  
@@ -103,7 +103,7 @@ let rec compile' env p =
   | Expr.Var   x          -> [LD x]
   | Expr.Const n          -> [CONST n]
   | Expr.Binop (op, x, y) -> expr x @ expr y @ [BINOP op]
-  | Expr.Call (f, params) -> List.concat (List.map expr params) @ [CALL f]
+  | Expr.Call (f, params) -> List.concat (List.map expr params) @ [CALL (f, List.length params, false)]
   in
   match p with
     | Stmt.Seq (s1, s2)  ->
@@ -131,12 +131,12 @@ let rec compile' env p =
         let firstL = env#get_label in
         let c1 = compile' env s in
         ([LABEL firstL] @ c1 @ expr e @ [CJMP ("z", firstL)])
-    | Stmt.Call (f, p)    -> List.concat (List.map expr p) @ [CALL f]
+    | Stmt.Call (f, p)    -> List.concat (List.map expr p) @ [CALL (f, List.length p, true)]
     | Stmt.Return None  -> [] @ [END]
     | Stmt.Return Some v -> (expr v) @ [END]
 
 let cproc env (f_name, (args, l_var, body)) =
-  [LABEL f_name; BEGIN (args, l_var)] @ compile' env body @ [END]
+  [LABEL f_name; BEGIN (f_name, args, l_var)] @ compile' env body @ [END]
 
 let compile (defs, prog) = let env = new env in
   let e_label = env#get_label in
