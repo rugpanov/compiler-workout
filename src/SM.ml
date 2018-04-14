@@ -140,6 +140,4 @@ let cproc env (f_name, (args, l_var, body)) =
   [LABEL f_name; BEGIN (f_name, args, l_var)] @ compile' env body @ [END]
 
 let compile (defs, prog) = let env = new env in
-  let e_label = env#get_label in
-  [JMP e_label] @ List.concat (List.map (cproc env) defs)
-    @ [LABEL e_label] @ compile' env prog
+compile' env prog @ [END] @ List.concat (List.map (cproc env) defs)

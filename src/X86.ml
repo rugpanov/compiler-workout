@@ -78,7 +78,7 @@ let show instr =
   | Label  l           -> Printf.sprintf "%s:\n" l
   | Jmp    l           -> Printf.sprintf "\tjmp\t%s" l
   | CJmp  (s , l)      -> Printf.sprintf "\tj%s\t%s" s l
-  | _ -> failwith (Printf.sprintf "Unknown instr =<" )    
+  | Meta   s           -> Printf.sprintf "%s\n" s 
 
 (* Opening stack machine to use instructions without fully qualified names *)
 open SM
@@ -122,8 +122,8 @@ let rec compile env code =
   let compile_instr env instr =
     match instr with
       | CONST n -> let s, env = env#allocate in env, [Mov (L n, s)]
-      | WRITE -> let s, env = env#pop in env, [Push s; Call "Lwrite"; Pop eax]
-      | READ -> let s, env = env#allocate in env, [Call "Lread"; Mov (eax, s)]
+      | WRITE -> let s, env = env#pop in env, [Push s; Call "_Lwrite"; Pop eax]
+      | READ -> let s, env = env#allocate in env, [Call "_Lread"; Mov (eax, s)]
       | ST x -> let s, env = (env#global x)#pop in env, smart_move s (env#loc x) 
       | LD x -> let s, env = (env#global x)#allocate in env, smart_move (env#loc x) s
       | LABEL s -> env, [Label s]
@@ -146,20 +146,20 @@ let rec compile env code =
         | BEGIN (f_name, args, l_var) -> 
           let env = env#enter f_name args l_var in
           env, [Push ebp; Mov (esp, ebp); Binop ("-", M ("$" ^ env#lsize), esp)]
-        | END -> env, [Label env#epilogue; Mov (ebp, esp); Pop ebp; Ret;]
+        | END -> env, [Label env#epilogue; Mov (ebp, esp); Pop ebp; Ret; Meta (Printf.sprintf "\t.set\t%s,\t%d" env#lsize (env#allocated * word_size))]
         | RET is_func -> (
           if is_func
           then let func_result, env = env#pop in env, [Mov (func_result, eax); Jmp env#epilogue]
           else env, [Jmp env#epilogue])
-        | CALL (f_name, param_count, is_func) -> (
+        | CALL (f_name, param_count, is_proc) -> (
           let push_params, env = get_params [] env param_count in
           let move_stack_pointer = [Binop ("+", L (param_count * word_size), esp)] in
           let push_regs = List.map (fun x -> Push x) env#live_registers in
           let pop_regs = List.rev_map (fun x -> Pop x) env#live_registers in
           let get_result, env = (
-            if is_func
-            then let allocated_memory_link, env = env#allocate in [Mov (eax, allocated_memory_link)], env
-            else [], env) in
+            if is_proc
+            then [], env
+            else let allocated_memory_link, env = env#allocate in [Mov (eax, allocated_memory_link)], env) in
           env, push_regs @ push_params @ [Call f_name] @ move_stack_pointer @ pop_regs @ get_result)
         | _ -> failwith "Something went wrong"
 in match code with
@@ -247,13 +247,13 @@ let genasm (ds, stmt) =
   let env, code =
     compile
       (new env)
-      ((LABEL "main") :: (BEGIN ("main", [], [])) :: SM.compile (ds, stmt))
+      ((LABEL "_main") :: (BEGIN ("_main", [], [])) :: SM.compile (ds, stmt))
   in
   let data = Meta "\t.data" :: (List.map (fun s -> Meta (s ^ ":\t.int\t0")) env#globals) in 
   let asm = Buffer.create 1024 in
   List.iter
     (fun i -> Buffer.add_string asm (Printf.sprintf "%s\n" @@ show i))
-    (data @ [Meta "\t.text"; Meta "\t.globl\tmain"] @ code);
+    (data @ [Meta "\t.text"; Meta "\t.globl\t_main"] @ code);
   Buffer.contents asm
 
 (* Builds a program: generates the assembler file and compiles it with the gcc toolchain *)
