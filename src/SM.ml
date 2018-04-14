@@ -63,7 +63,7 @@ let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
             fun params (st, x::stack') -> (State.update params x st, stack')  
         ) params (s1, stack) in
         eval env (cstack, stack', (st', i, o)) prg'
-      | END -> (match cstack with
+      | END | RET -> (match cstack with
         | (prg', st')::cstack' -> eval env (cstack', stack, (State.leave st st', i, o)) prg'
         | [] -> conf)
     )
@@ -132,8 +132,8 @@ let rec compile' env p =
         let c1 = compile' env s in
         ([LABEL firstL] @ c1 @ expr e @ [CJMP ("z", firstL)])
     | Stmt.Call (f, p)    -> List.concat (List.map expr p) @ [CALL (f, List.length p, true)]
-    | Stmt.Return None  -> [] @ [END]
-    | Stmt.Return Some v -> (expr v) @ [END]
+    | Stmt.Return None  -> [] @ [RET false]
+    | Stmt.Return Some v -> (expr v) @ [RET true]
 
 let cproc env (f_name, (args, l_var, body)) =
   [LABEL f_name; BEGIN (f_name, args, l_var)] @ compile' env body @ [END]

@@ -135,6 +135,15 @@ let rec compile env code =
           | "/" ->[Mov (sy, eax); Cltd; IDiv sx; Mov (eax, sy)]
           | "%" ->[Mov (sy, eax); Cltd; IDiv sx; Mov (edx, sy)]
           | _ -> [Mov (sy, eax); Binop (op, sx, eax); Mov (eax, sy)])
+        | BEGIN (f_name, args, l_var) -> 
+          let env = env#enter f_name args l_var in
+          env, [Push ebp; Mov (esp, ebp); Binop ("-", M ("$" ^ env#lsize), esp)]
+        | END -> env, [Label env#epilogue; Mov (ebp, esp); Pop ebp; Ret;]
+        | RET is_func -> 
+          if is_func
+          then let func_result, env = env#pop in env, [Mov (func_result, eax); Jmp env#epilogue]
+          else env, [Jmp env#epilogue]
+        | CALL (f_name, args_count, is_func) -> failwith "Not implemented yet"
         | _ -> failwith "Something went wrong"
 in match code with
 | [] -> env, []
