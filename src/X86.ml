@@ -115,7 +115,7 @@ let rec get_params builder env counter = (
   match counter with
   | 0 -> builder, env
   | i -> let param, env = env#pop in
-  get_params (Push param :: builder) env (i-1)
+  get_params (param :: builder) env (i-1)
 )
 
 let rec compile env code =
@@ -152,7 +152,8 @@ let rec compile env code =
           then let func_result, env = env#pop in env, [Mov (func_result, eax); Jmp env#epilogue]
           else env, [Jmp env#epilogue])
         | CALL (f_name, param_count, is_proc) -> (
-          let push_params, env = get_params [] env param_count in
+          let rev_params, env = get_params [] env param_count in
+          let push_params = List.map (fun x -> Push x) (List.rev rev_params) in
           let move_stack_pointer = [Binop ("+", L (param_count * word_size), esp)] in
           let push_regs = List.map (fun x -> Push x) env#live_registers in
           let pop_regs = List.rev_map (fun x -> Pop x) env#live_registers in
