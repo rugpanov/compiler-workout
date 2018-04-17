@@ -174,8 +174,14 @@ in match code with
 (* A set of strings *)           
 module S = Set.Make (String)
 
+let init n f =
+  let rec init' i n f =
+    if i >= n then []
+    else (f i) :: (init' (i + 1) n f)
+  in init' 0 n f
+
 (* Environment implementation *)
-let make_assoc l = List.combine l (List.init (List.length l) (fun x -> x))
+let make_assoc l = List.combine l (init (List.length l) (fun x -> x))
                      
 class env =
   object (self)
