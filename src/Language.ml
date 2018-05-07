@@ -13,6 +13,12 @@ module Value =
 
     @type t = Int of int | String of string | Array of t list with show
 
+    let init n f =
+      let rec init' i n f =
+        if i >= n then []
+        else (f i) :: (init' (i + 1) n f)
+      in init' 0 n f
+  
     let to_int = function 
     | Int n -> n 
     | _ -> failwith "int value expected"
@@ -30,7 +36,7 @@ module Value =
     let of_array  a = Array  a
 
     let update_string s i x = String.init (String.length s) (fun j -> if j = i then x else s.[j])
-    let update_array  a i x = List.init   (List.length a)   (fun j -> if j = i then x else List.nth a j)
+    let update_array  a i x = init (List.length a) (fun j -> if j = i then x else List.nth a j)
 
   end
        
@@ -149,8 +155,12 @@ module Expr =
      
     let rec eval env ((st, i, o, r) as conf) expr =      
       match expr with
-      | Const n -> n, conf
-      | Var   name -> State.eval st name, conf
+      | Const n -> (st, i, o, Some (Value.of_int n))
+      | Array arr ->
+        let (st, i, o, r) = eval_list env conf arr in
+        (st, i, o, Some (Value.of_array r))
+      | String s -> (st, i, o, Some (Value.of_string s))
+      | Var   name -> (st, i, o, Some (State.eval st x))
       | Binop (op, x, y) ->
         let p1, ((st, i, o, r) as conf) = eval env conf x in 
         let p2, ((st, i, o, r) as conf) = eval env conf y in 
@@ -163,6 +173,12 @@ module Expr =
           | None -> failwith "Void return"
           | Some v -> v
         ), conf
+      | Elem (b, i) -> 
+        let (st, i, o, args) = eval_list env conf [b; i] in
+        env#definition env "$elem" args (st, i, o, None)
+      | Length e ->
+        let (st, i, o, Some args) = eval env conf e in
+        env#definition env "$length" [args] (st, i, o, None)
     and eval_list env conf xs =
       let vs, (st, i, o, _) =
         List.fold_left
@@ -192,10 +208,16 @@ module Expr =
                 `Lefta, ["*" ; "/"; "%"];
               |] 
 	    )
-	    primary);
+	    secondary);
       
+      secondary: b:primary is:(-"[" i:parse -"]" {`Elem i} | "." %"length" {`Len})*
+        {List.fold_left (fun b -> function `Elem i -> Elem(b, i) | `Len -> Length b) b is};
+
       primary:
         n:DECIMAL {Const n}
+      | c:CHAR    {Const (Char.code c)}
+      | s:STRING  {String (String.sub s 1 (String.length s - 2))}
+      | "[" arr:!(Util.list0)[parse] "]" {Array arr}
       | x:IDENT p:("(" params:!(Util.list0 parse) ")" {Call (x, params)} | empty {Var x}) {p}
       | -"(" parse -")"
     )
@@ -248,9 +270,10 @@ module Stmt =
       | Write   e           -> 
                 let value, (st, i, o, _) = Expr.eval env conf e in
                 eval env (st, i, o @ [value], None) Skip k
-      | Assign (x, e)       ->
+      | Assign (x, res, e)       ->
                 let value, (st, i, o, _) = Expr.eval env conf e in
-                eval env (State.update x value st, i, o, None) Skip k
+                let (st, i, o, res) = Expr.eval_list env (st, i, o, None) res in
+                eval env (update st x value res, i, o, None) Skip k
       | Seq    (s1, s2)     -> eval env conf (process_seq s2 k) s1
       | Skip                -> if k = Skip then (st, i, o, None) else eval env conf Skip k
       | If     (e, s1, s2)  -> let value, conf = Expr.eval env conf e in eval env conf k (if value <> 0 then s1 else s2)
@@ -279,9 +302,7 @@ module Stmt =
       | "" {Skip};
       
       stmt:
-        "read" "(" x:IDENT ")"                                                {Read x}
-      | "write" "(" e:!(Expr.parse) ")"                                       {Write e}
-      | x:IDENT ":=" e:!(Expr.parse)                                          {Assign (x, e)}
+        x:IDENT res:(-"[" !(Expr.parse) -"]")* ":=" e:!(Expr.parse)           {Assign (x, res, e)}
       | %"skip"                                                               {Skip}
       | %"while" e:!(Expr.parse) %"do" s:parse %"od"                          {While (e, s)}
       | %"for" i:parse "," e:!(Expr.parse) "," s2:parse %"do" s1:parse %"od"  {Seq (i, While (e, Seq (s1, s2)))}
