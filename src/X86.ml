@@ -243,7 +243,7 @@ class env =
     (* returns a list of live registers *)
     method live_registers =
       List.filter (function R _ -> true | _ -> false) stack
-      
+       
   end
   
 (* Generates an assembler text for a program: first compiles the program into
