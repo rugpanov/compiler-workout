@@ -122,8 +122,6 @@ let rec compile env code =
   let compile_instr env instr =
     match instr with
       | CONST n -> let s, env = env#allocate in env, [Mov (L n, s)]
-      | WRITE -> let s, env = env#pop in env, [Push s; Call "Lwrite"; Pop eax]
-      | READ -> let s, env = env#allocate in env, [Call "Lread"; Mov (eax, s)]
       | ST x -> let s, env = (env#global x)#pop in env, smart_move s (env#loc x) 
       | LD x -> let s, env = (env#global x)#allocate in env, smart_move (env#loc x) s
       | LABEL s -> env, [Label s]

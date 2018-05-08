@@ -49,21 +49,26 @@ let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
   | [] -> conf
   | insn :: prg' ->
     (match insn with
-      | BINOP op -> let y::x::stack' = stack in eval env (cstack, Expr.to_func op x y :: stack', c) prg'
-      | READ     -> let z::i'        = i     in eval env (cstack, z::stack, (st, i', o)) prg'
-      | WRITE    -> let z::stack'    = stack in eval env (cstack, stack', (st, i, o @ [z])) prg'
-      | CONST i  -> eval env (cstack, i::stack, c) prg'
+      | BINOP op -> let y::x::stack' = stack in
+        eval env (cstack, (Value.of_int (Expr.to_func op (Value.to_int x) (Value.to_int y)))::stack', c) prg'
+      | CONST i  -> eval env (cstack, (Value.of_int i)::stack, c) prg'
+      | STRING s -> eval env (cstack, (Value.of_string s)::stack, c) prg'
       | LD x     -> eval env (cstack, State.eval st x :: stack, c) prg'
       | ST x     -> let z::stack' = stack in eval env (cstack, stack', (State.update x z st, i, o)) prg'
+      | STA (x, n) -> let v::is, stack' = split (n+1) stack in 
+        eval env (cstack, stack', (Stmt.update st x v @@ List.rev is, i, o)) prg'
       | LABEL _  -> eval env conf prg'
       | JMP   l  -> eval env conf (env#labeled l)
       | CJMP (s, l) ->
         let z::stack' = stack in
             eval env (cstack, stack', (st, i, o)) (
-            if (parse_check s z)
+            if (parse_check s (Value.to_int z))
             then (env#labeled l)
             else prg')
-      | CALL (f, _, _)   -> eval env ((prg', st)::cstack, stack, c) (env#labeled f)
+      | CALL (f, n, p) ->
+        if env#is_label f
+        then eval env ((prg', st)::cstack, stack, c) (env#labeled f)
+        else eval env (env#builtin conf f n p) prg'
       | BEGIN (_, params, locals) ->
         let s1 = State.enter st (params @ locals) in
         let (st', stack') = List.fold_right (
@@ -127,17 +132,20 @@ let rec compile' env p =
   let rec expr = function
   | Expr.Var   x          -> [LD x]
   | Expr.Const n          -> [CONST n]
+  | Expr.String s         -> [STRING s]
   | Expr.Binop (op, x, y) -> expr x @ expr y @ [BINOP op]
   | Expr.Call (f, params) -> List.concat (List.map expr params) @ [CALL (f, List.length params, false)]
+  | Expr.Array elems      -> List.concat (List.map expr elems) @ [CALL ("$array", List.length elems, false)]
+  | Expr.Elem (a, i)      -> expr a @ expr i @ [CALL ("$elem", 2, false)]
+  | Expr.Length a         -> expr a @ [CALL ("$length", 1, false)]
   in
   match p with
     | Stmt.Seq (s1, s2)  ->
         let conf = compile' env s1 in
         let conf' = compile' env s2 in
         conf @ conf'
-    | Stmt.Read x        -> [READ; ST x]
-    | Stmt.Write e       -> expr e @ [WRITE]
-    | Stmt.Assign (x, e) -> expr e @ [ST x]
+    | Stmt.Assign (x, [], e) -> expr e @ [ST x]
+    | Stmt.Assign (x, is, e) -> List.concat (List.map expr is) @ expr e @ [STA (x, List.length is)]
     | Stmt.Skip          -> []
     | Stmt.If (e, s1, s2)->
         let firstL = env#get_label in

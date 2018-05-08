@@ -160,19 +160,14 @@ module Expr =
         let (st, i, o, r) = eval_list env conf arr in
         (st, i, o, Some (Value.of_array r))
       | String s -> (st, i, o, Some (Value.of_string s))
-      | Var   name -> (st, i, o, Some (State.eval st x))
+      | Var   name -> (st, i, o, Some (State.eval st name))
       | Binop (op, x, y) ->
-        let p1, ((st, i, o, r) as conf) = eval env conf x in 
-        let p2, ((st, i, o, r) as conf) = eval env conf y in 
-        (to_func op) p1 p2, conf
+        let ((st, i, o, Some r1) as conf) = eval env conf x in 
+        let ((st, i, o, Some r2) as conf) = eval env conf y in
+        (st, i, o, Some (Value.of_int @@ to_func op (Value.to_int r1) (Value.to_int r2)))
       | Call (funct, params) ->
-        let process_with_conf (conf, list) e = (let v, conf = eval env conf e in conf, list @ [v]) in
-        let conf, updated_params = List.fold_left process_with_conf (conf, []) params in
-        let ((st, i, o, r) as conf) = env#definition env funct updated_params conf in
-        (match r with
-          | None -> failwith "Void return"
-          | Some v -> v
-        ), conf
+        let (st, i, o, eval_params) = eval_list env conf params in
+        env#definition env funct eval_params conf
       | Elem (b, i) -> 
         let (st, i, o, args) = eval_list env conf [b; i] in
         env#definition env "$elem" args (st, i, o, None)
@@ -266,28 +261,22 @@ module Stmt =
 
     let rec eval env ((st, i, o, r) as conf) k stmt = 
       match stmt with
-      | Read    x           -> eval env (match i with z::i' -> (State.update x z st, i', o, None) | _ -> failwith "Why is here end of input") Skip k
-      | Write   e           -> 
-                let value, (st, i, o, _) = Expr.eval env conf e in
-                eval env (st, i, o @ [value], None) Skip k
       | Assign (x, res, e)       ->
-                let value, (st, i, o, _) = Expr.eval env conf e in
-                let (st, i, o, res) = Expr.eval_list env (st, i, o, None) res in
-                eval env (update st x value res, i, o, None) Skip k
+        let (st, i, o, Some v) as conf = Expr.eval env conf e in
+        let (st, i, o, res) = Expr.eval_list env (st, i, o, None) res in 
+        eval env (update st x v res, i, o, None) Skip k
       | Seq    (s1, s2)     -> eval env conf (process_seq s2 k) s1
       | Skip                -> if k = Skip then (st, i, o, None) else eval env conf Skip k
-      | If     (e, s1, s2)  -> let value, conf = Expr.eval env conf e in eval env conf k (if value <> 0 then s1 else s2)
+      | If     (e, s1, s2)  -> 
+        let (_, _, _, Some v) as conf = Expr.eval env conf e in
+        eval env conf k (if Value.to_int v <> 0 then s1 else s2)
       | While  (e, s)       -> (
-        let value, conf = Expr.eval env conf e in 
-        if (value <> 0)
-        then eval env conf (process_seq stmt k) s
+        let ((_, _, _, Some v) as conf) = Expr.eval env conf e in 
+        if Value.to_int v != 0 then eval env conf (process_seq stmt k) s
         else eval env conf Skip k)
       | Repeat (s, e)       -> eval env conf (process_seq (While ((Expr.Binop ("==", e, Expr.Const 0)), s)) k) s 
-      | Call (f, params)    ->
-        let process_with_conf (conf, list) e = (let v, conf = Expr.eval env conf e in conf, list @ [v]) in
-        let conf, updated_params = List.fold_left process_with_conf (conf, []) params in
-        eval env (env#definition env f updated_params conf) Skip k
-      | Return Some ex      ->  let v, (st, i, o, _) = Expr.eval env conf ex in (st, i, o, Some v)
+      | Call (f, params)    -> eval env (Expr.eval env conf (Expr.Call (f, params))) k Skip
+      | Return Some ex      -> Expr.eval env conf ex
       | Return None         -> (st, i, o, None)
 
     (* Statement parser *)
