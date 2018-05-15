@@ -44,7 +44,13 @@ type instr =
 (* a conditional jump                                   *) | CJmp  of string * string
 (* a non-conditional jump                               *) | Jmp   of string
 (* directive                                            *) | Meta  of string
-                                                                            
+    
+let init n f =
+  let rec init' i n f =
+    if i >= n then []
+    else (f i) :: (init' (i + 1) n f)
+  in init' 0 n f
+  
 (* Instruction printer *)
 let show instr =
   let binop = function

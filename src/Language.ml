@@ -11,7 +11,7 @@ open Combinators
 module Value =
   struct
 
-    @type t = Int of int | String of string | Array of t list with show
+    @type t = Int of int | String of string | Array of t list | Sexp of string * t list with show
 
     let init n f =
       let rec init' i n f =
@@ -83,7 +83,6 @@ module State =
       match st with
       | G _         -> L (xs, undefined, st)
       | L (_, _, e) -> enter e xs
-
 
     (* Drops a scope *)
     let leave st st' =
@@ -158,12 +157,12 @@ module Expr =
     type config = State.t * int list * int list * Value.t option
                                                             
     (* Expression evaluator
-      val eval : env -> config -> t -> int * config
-      Takes an environment, a configuration and an expresion, and returns another configuration. The 
-      environment supplies the following method
-      method definition : env -> string -> int list -> config -> config
-      which takes an environment (of the same type), a name of the function, a list of actual parameters and a configuration, 
-      an returns resulting configuration
+          val eval : env -> config -> t -> int * config
+       Takes an environment, a configuration and an expresion, and returns another configuration. The 
+       environment supplies the following method
+           method definition : env -> string -> int list -> config -> config
+       which takes an environment (of the same type), a name of the function, a list of actual parameters and a configuration, 
+       an returns a pair: the return value for the call and the resulting configuration
     *)                                                       
     let to_func op =
       let bti   = function true -> 1 | _ -> 0 in
@@ -185,7 +184,6 @@ module Expr =
       | "!!" -> fun x y -> bti (itb x || itb y)
       | _    -> failwith (Printf.sprintf "Unknown binary operator %s" op)    
     
-     
     let rec eval env ((st, i, o, r) as conf) expr =      
       match expr with
       | Const n -> (st, i, o, Some (Value.of_int n))
@@ -203,21 +201,23 @@ module Expr =
         env#definition env funct eval_params conf
       | Elem (b, i) -> 
         let (st, i, o, args) = eval_list env conf [b; i] in
-        env#definition env "$elem" args (st, i, o, None)
+        env#definition env ".elem" args (st, i, o, None)
+      | Sexp (s, vs) -> let (st, i, o, res) = eval_list env conf vs in
+        (st, i, o, Some (Value.sexp s res))
       | Length e ->
         let (st, i, o, Some args) = eval env conf e in
-        env#definition env "$length" [args] (st, i, o, None)
-    and eval_list env conf xs =
-      let vs, (st, i, o, _) =
-        List.fold_left
-          (fun (acc, conf) x ->
-            let (_, _, _, Some v) as conf = eval env conf x in
-            v::acc, conf
-          )
-          ([], conf)
-          xs
-      in
-      (st, i, o, List.rev vs)
+        env#definition env ".length" [args] (st, i, o, None)
+        and eval_list env conf xs =
+        let vs, (st, i, o, _) =
+          List.fold_left
+            (fun (acc, conf) x ->
+              let (_, _, _, Some v) as conf = eval env conf x in
+              v::acc, conf
+            )
+            ([], conf)
+            xs
+        in
+        (st, i, o, List.rev vs)
          
     (* Expression parser. You can use the following terminals:
 
@@ -246,6 +246,7 @@ module Expr =
       | c:CHAR    {Const (Char.code c)}
       | s:STRING  {String (String.sub s 1 (String.length s - 2))}
       | "[" arr:!(Util.list0)[parse] "]" {Array arr}
+      | "`" t:IDENT args:(-"(" !(Util.list)[parse] -")")? {Sexp (t, match args with None -> [] | Some args -> args)}
       | x:IDENT p:("(" params:!(Util.list0 parse) ")" {Call (x, params)} | empty {Var x}) {p}
       | -"(" parse -")"
     )
@@ -269,7 +270,10 @@ module Stmt =
 
         (* Pattern parser *)                                 
         ostap (
-          parse: empty {failwith "Not implemented"}
+          parse:
+            %"_" {Wildcard}
+          | "`" t:IDENT ps:(-"(" !(Util.list)[parse] -")")? {Sexp (t, match ps with None -> [] | Some ps -> ps)}
+          | x:IDENT {Ident x}
         )
         
         let vars p =
@@ -379,7 +383,9 @@ module Stmt =
       | %"repeat" s:parse %"until" e:!(Expr.parse)                            {Repeat (s, e)}
       | %"if" e:!(Expr.parse) %"then" s1:parse s2:else_branch %"fi"           {If (e, s1, s2)}
       | %"return" e:!(Expr.parse)?                                            {Return e}
-      | %"case" e:!(Expr.parse) %"of" branches:!(Util.listBy)[ostap ("|")][ostap (!(Pattern.parse) -"->" parse)] %"esac" {Case (e, branches)}
+      | %"case" e:!(Expr.parse) 
+        %"of" branches:!(Util.listBy)[ostap ("|")][ostap (!(Pattern.parse) -"->" parse)] 
+        %"esac" {Case (e, branches)}
       | f_name:IDENT "(" args:!(Util.list0)[Expr.parse] ")"                   {Call (f_name, args)}
     )
       
