@@ -5,7 +5,8 @@ open Language
 @type insn =
 (* binary operator                 *) | BINOP   of string
 (* put a constant on the stack     *) | CONST   of int
-(* put a string on the stack       *) | STRING  of string                      
+(* put a string on the stack       *) | STRING  of string
+(* create an S-expression          *) | SEXP    of string * int
 (* load a variable to the stack    *) | LD      of string
 (* store a variable from the stack *) | ST      of string
 (* store in an array               *) | STA     of string * int
@@ -15,7 +16,14 @@ open Language
 (* begins procedure definition     *) | BEGIN   of string * string list * string list
 (* end procedure definition        *) | END
 (* calls a function/procedure      *) | CALL    of string * int * bool
-(* returns from a function         *) | RET     of bool with show
+(* returns from a function         *) | RET     of bool
+(* drops the top element off       *) | DROP
+(* duplicates the top element      *) | DUP
+(* swaps two top elements          *) | SWAP
+(* checks the tag of S-expression  *) | TAG     of string
+(* enters a scope                  *) | ENTER   of string list
+(* leaves a scope                  *) | LEAVE
+with show
                                                    
 (* The type for the stack machine program *)
 type prg = insn list
@@ -170,6 +178,42 @@ let rec compile' env p =
 
 let cproc env (f_name, (args, l_var, body)) =
   [LABEL f_name; BEGIN (f_name, args, l_var)] @ compile' env body @ [END]
+
+(*
+let compile (defs, p) = 
+  let label s = "L" ^ s in
+  let rec call f args p =
+    let args_code = List.concat @@ List.map expr args in
+    args_code @ [CALL (label f, List.length args, p)]
+  and pattern lfalse _ = failwith "Not implemented"
+  and bindings p = failwith "Not implemented"
+  and expr e = failwith "Not implemented" in
+  let rec compile_stmt l env stmt =  failwith "Not implemented" in
+  let compile_def env (name, (args, locals, stmt)) =
+    let lend, env       = env#get_label in
+    let env, flag, code = compile_stmt lend env stmt in
+    env,
+    [LABEL name; BEGIN (name, args, locals)] @
+    code @
+    (if flag then [LABEL lend] else []) @
+    [END]
+  in
+  let env =
+    object
+      val ls = 0
+      method get_label = (label @@ string_of_int ls), {< ls = ls + 1 >}
+    end
+  in
+  let env, def_code =
+    List.fold_left
+      (fun (env, code) (name, others) -> let env, code' = compile_def env (label name, others) in env, code'::code)
+      (env, [])
+      defs
+  in
+  let lend, env = env#get_label in
+  let _, flag, code = compile_stmt lend env p in
+  (if flag then code @ [LABEL lend] else code) @ [END] @ (List.concat def_code) 
+*)
 
 let compile (defs, prog) = let env = new env in
 compile' env prog @ [END] @ List.concat (List.map (cproc env) defs)
