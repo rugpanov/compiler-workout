@@ -332,6 +332,31 @@ module Stmt =
         else eval env conf Skip k)
       | Repeat (s, e)       -> eval env conf (process_seq (While ((Expr.Binop ("==", e, Expr.Const 0)), s)) k) s 
       | Call (f, params)    -> eval env (Expr.eval env conf (Expr.Call (f, params))) k Skip
+      | Leave -> eval env (State.drop st, i, o, r) Skip k
+      | Case (e, branches) -> (
+        let (_, _, _, Some v) as conf' = Expr.eval env conf e in
+        let rec branch ((st, i, o, _) as conf) = function
+        | [] -> failwith("No branch selected")
+        | (pattern, body)::tail ->
+          let rec match_pattern pattern v st =
+            let bind_val x v = function
+            | Some s -> Some (State.bind x v s)
+            | None -> None
+            in match pattern, v with
+            | Pattern.Ident x, v -> bind_val x v st
+            | Pattern.Wildcard , _ -> st
+            | Pattern.Sexp (t, ps), Value.Sexp (t', vs) when t = t' -> match_list ps vs st
+            | _                                                     -> None
+         and match_list ps vs s = match ps, vs with
+            | [], []       -> s
+            | p::ps, v::vs -> match_list ps vs (match_pattern p v s)
+            | _            -> None
+         in match match_pattern pattern v (Some State.undefined) with
+            | None     -> branch conf tail
+            | Some st' -> eval env (State.push st st' (Pattern.vars pattern), i, o, None) k (Seq (body, Leave))
+         in
+         branch conf' branches
+      )
       | Return Some ex      -> Expr.eval env conf ex
       | Return None         -> (st, i, o, None)
 
@@ -353,7 +378,8 @@ module Stmt =
       | %"for" i:parse "," e:!(Expr.parse) "," s2:parse %"do" s1:parse %"od"  {Seq (i, While (e, Seq (s1, s2)))}
       | %"repeat" s:parse %"until" e:!(Expr.parse)                            {Repeat (s, e)}
       | %"if" e:!(Expr.parse) %"then" s1:parse s2:else_branch %"fi"           {If (e, s1, s2)}
-      | %"return" e:!(Expr.parse)?                                            {Return e} 
+      | %"return" e:!(Expr.parse)?                                            {Return e}
+      | %"case" e:!(Expr.parse) %"of" branches:!(Util.listBy)[ostap ("|")][ostap (!(Pattern.parse) -"->" parse)] %"esac" {Case (e, branches)}
       | f_name:IDENT "(" args:!(Util.list0)[Expr.parse] ")"                   {Call (f_name, args)}
     )
       
