@@ -5,7 +5,7 @@
 # include <malloc.h>
 # include <string.h>
 # include <stdarg.h>
-// # include <alloca.h>
+# include <alloca.h>
 
 # define STRING_TAG 0x00000000
 # define ARRAY_TAG  0x01000000
