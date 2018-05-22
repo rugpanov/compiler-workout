@@ -89,6 +89,8 @@ let show instr =
 (* Opening stack machine to use instructions without fully qualified names *)
 open SM
 
+
+  
 (* Symbolic stack machine evaluator
 
      compile : env -> prg -> env * instr list
@@ -105,6 +107,19 @@ let compile env code =
   | ">=" -> "ge"
   | ">"  -> "g"
   | _    -> failwith "unknown operator"	
+  in
+  let save_tag_as_int tag = 
+    let tag_len = String.length tag in
+    let tag = String.sub tag 0 (min tag_len 5) in
+    let to_int = function
+      | '_' -> 53
+      | c when c <= 'Z' -> Char.code c - 64
+      | c -> Char.code c - 70 
+    in
+    let rec tag_to_int acc n = 
+        if (n >= tag_len) then acc
+        else tag_to_int ((acc lsl 6) lor to_int tag.[n]) n + 1 
+    in tag_to_int 0 0
   in
   let rec compile' env scode =    
     let on_stack = function S _ -> true | _ -> false in
@@ -142,6 +157,9 @@ let compile env code =
     | instr :: scode' ->
         let env', code' =
           match instr with
+      | SEXP (tag, n) -> 
+          let env, code = call env ".sexp" (n + 1) true in
+          env, [Push (L (save_tag_as_int tag))] @ code
   	  | CONST n ->
              let s, env' = env#allocate in
 	     (env', [Mov (L n, s)])
@@ -361,14 +379,14 @@ let genasm (ds, stmt) =
   let env, code =
     compile
       (new env)
-      ((LABEL "main") :: (BEGIN ("main", [], [])) :: SM.compile (ds, stmt))
+      ((LABEL "_main") :: (BEGIN ("_main", [], [])) :: SM.compile (ds, stmt))
   in
   let data = Meta "\t.data" :: (List.map (fun s      -> Meta (Printf.sprintf "%s:\t.int\t0"         s  )) env#globals) @
                                (List.map (fun (s, v) -> Meta (Printf.sprintf "%s:\t.string\t\"%s\"" v s)) env#strings) in 
   let asm = Buffer.create 1024 in
   List.iter
     (fun i -> Buffer.add_string asm (Printf.sprintf "%s\n" @@ show i))
-    (data @ [Meta "\t.text"; Meta "\t.globl\tmain"] @ code);
+    (data @ [Meta "\t.text"; Meta "\t.globl\t_main"] @ code);
   Buffer.contents asm
 
 (* Builds a program: generates the assembler file and compiles it with the gcc toolchain *)
