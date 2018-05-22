@@ -379,14 +379,14 @@ let genasm (ds, stmt) =
   let env, code =
     compile
       (new env)
-      ((LABEL "_main") :: (BEGIN ("_main", [], [])) :: SM.compile (ds, stmt))
+      ((LABEL "main") :: (BEGIN ("main", [], [])) :: SM.compile (ds, stmt))
   in
   let data = Meta "\t.data" :: (List.map (fun s      -> Meta (Printf.sprintf "%s:\t.int\t0"         s  )) env#globals) @
                                (List.map (fun (s, v) -> Meta (Printf.sprintf "%s:\t.string\t\"%s\"" v s)) env#strings) in 
   let asm = Buffer.create 1024 in
   List.iter
     (fun i -> Buffer.add_string asm (Printf.sprintf "%s\n" @@ show i))
-    (data @ [Meta "\t.text"; Meta "\t.globl\t_main"] @ code);
+    (data @ [Meta "\t.text"; Meta "\t.globl\tmain"] @ code);
   Buffer.contents asm
 
 (* Builds a program: generates the assembler file and compiles it with the gcc toolchain *)
